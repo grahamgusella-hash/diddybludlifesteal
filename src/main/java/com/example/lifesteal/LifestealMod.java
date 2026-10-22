@@ -69,6 +69,7 @@ public class LifestealMod implements ModInitializer {
 
     @Override public void onInitialize() {
         SmpMenus.init();
+        LifestealSpawners.init();
         // Vanilla Nether Star, identified via persistent vanilla custom_data.
         // Do NOT register a new item ID: a vanilla client cannot decode that registry.
         HEART = Items.NETHER_STAR;
