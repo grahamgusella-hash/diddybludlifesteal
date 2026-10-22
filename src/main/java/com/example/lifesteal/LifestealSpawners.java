@@ -156,7 +156,13 @@ public final class LifestealSpawners {
                 while(remaining>0){
                     int amount=Math.min(64,remaining);
                     ItemStack drops=spawner(entry.mob(),amount);
-                    if(!p.getInventory().add(drops))p.drop(drops,false);
+                    p.getInventory().add(drops);
+                    // ItemStack is reduced by inventory insertion; spawn any remainder
+                    // directly in the world (avoids ServerPlayer.drop Prediction overload).
+                    if(!drops.isEmpty()) {
+                        sl.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(
+                            sl,p.getX(),p.getY()+0.5,p.getZ(),drops.copy()));
+                    }
                     remaining-=amount;
                 }
             }
