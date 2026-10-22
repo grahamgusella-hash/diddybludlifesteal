@@ -34,6 +34,7 @@ public final class SmpMenus {
     private static final Set<String> DISABLED_SHARD_ITEMS=new HashSet<>();
     private static final Map<UUID,Long> SHARDS=LifestealMod.shardBalances();
     private static final Map<String,Long> SHARD_PRICES=new LinkedHashMap<>();
+    private static final Map<String,Long> SPAWNER_PRICES=new LinkedHashMap<>();
     private record Listing(UUID owner,ItemStack stack,long price) {}
     private record Order(UUID owner,String itemId,int count,long unitPrice) {}
     private static final Map<Integer,Listing> AUCTIONS=new LinkedHashMap<>();
@@ -139,7 +140,7 @@ public final class SmpMenus {
                          "Blaze", "Pig", "Cow", "Sheep", "Chicken", "Iron Golem"};
         int[] positions = {11,12,13,14,15,16,19,20,21,22,23};
         for (int i=0;i<mobs.length;i++)
-            icons[positions[i]] = icon(Items.SPAWNER, mobs[i]+" Spawner (placeholder)");
+            icons[positions[i]] = icon(Items.SPAWNER, mobs[i]+" Spawner - click to receive 1");
         icons[26] = icon(Items.BARRIER,"Close");
         menu(p,"Custom Items (OP)",icons,(slot,button,type)->{
             // Re-check OP permission on each click, not only at command registration.
@@ -156,9 +157,10 @@ public final class SmpMenus {
                 message(p,"Received one Heart.");
                 return;
             }
-            for(int position:positions) if(slot==position) {
-                message(p,"Mob-specific spawners are not implemented yet; no item given.");
-                return;
+            for(int i=0;i<positions.length;i++)if(slot==positions[i]){
+                String mob=mobs[i].toLowerCase(Locale.ROOT).replace(' ','_');
+                p.getInventory().add(LifestealSpawners.spawner(mob,1));
+                message(p,"Received "+mobs[i]+" Spawner.");return;
             }
         });
     }
@@ -335,21 +337,64 @@ public final class SmpMenus {
         });
     }
 
+    /** Right-click a placed managed spawner with an empty hand to open this GUI. */
+    static void openSpawnerManager(ServerPlayer p,net.minecraft.server.level.ServerLevel level,
+                                   BlockPos pos,String mob,int count){
+        ItemStack[] icons=new ItemStack[27];
+        icons[4]=icon(Items.SPAWNER,mob+" Spawner x"+count+" (vanilla mob spawning)");
+        icons[10]=icon(Items.CHEST,"Storage (not yet implemented)");
+        icons[12]=icon(Items.EMERALD,"Sell All (not yet implemented)");
+        icons[14]=icon(Items.EXPERIENCE_BOTTLE,"Collect XP (not yet implemented)");
+        icons[16]=icon(Items.ANVIL,"Remove one spawner from stack (if stacked)");
+        icons[22]=icon(Items.PAPER,"Mob: "+mob+" | Stack count: "+count);
+        icons[26]=icon(Items.BARRIER,"Close");
+        menu(p,"Spawner | "+mob+" x"+count,icons,(slot,button,type)->{
+            if(slot==26){p.closeContainer();return;}
+            if(slot==16){
+                if(LifestealSpawners.removeOne(p,level,pos))
+                    openSpawnerManager(p,level,pos,mob,LifestealSpawners.count(level,pos));
+                else message(p,"Cannot remove a spawner. Need at least two and a free inventory slot.");
+                return;
+            }
+            if(slot==10||slot==12||slot==14)
+                message(p,"Virtual drops/XP are not implemented yet; real mobs spawn naturally.");
+        });
+    }
     private static void spawnerShop(ServerPlayer p,int page){
-        if(DISABLED_CATEGORIES.contains("spawners")&&!isShopOp(p)){message(p,"Spawners category is disabled.");return;}
+        if(DISABLED_CATEGORIES.contains("spawners")&&!isShopOp(p)){
+            message(p,"Spawners category is disabled.");return;
+        }
         int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
-        for(int i=0;i<18 && start+i<SPAWNER_MOBS.size();i++)
-            icons[i]=icon(Items.SPAWNER,SPAWNER_MOBS.get(start+i)+" Spawner (NOT YET AVAILABLE)");
+        String[] mobs=LifestealSpawners.mobs();
+        for(int i=0;i<18 && start+i<mobs.length;i++){
+            String mob=mobs[start+i];
+            long price=SPAWNER_PRICES.getOrDefault(mob,25000L);
+            icons[i]=LifestealSpawners.spawner(mob,1);
+            icons[i].set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                Component.literal(mob+" Spawner | Buy $"+price));
+        }
         icons[18]=icon(Items.ARROW,"Back to categories");
         icons[19]=icon(Items.PAPER,"Previous page");
         icons[25]=icon(Items.PAPER,"Next page");
-        icons[22]=icon(Items.BARRIER,"Spawner purchases disabled until mob type is preserved");
-        menu(p,"Spawner Shop (Preview)",icons,(slot,button,type)->{
+        icons[22]=icon(Items.EMERALD,"Balance: $"+balance(p.getUUID()));
+        if(isShopOp(p))icons[26]=icon(Items.COMPARATOR,"Admin pricing: left +$1,000 right -$1,000");
+        menu(p,"Spawner Shop",icons,(slot,button,type)->{
             if(slot==18){shop(p,false);return;}
             if(slot==19){spawnerShop(p,Math.max(0,page-1));return;}
-            if(slot==25){if(start+18<SPAWNER_MOBS.size())spawnerShop(p,page+1);return;}
-            if(slot>=0&&slot<18&&start+slot<SPAWNER_MOBS.size())
-                message(p,"This spawner is preview-only. Mob-specific spawners are not yet implemented.");
+            if(slot==25){if(start+18<mobs.length)spawnerShop(p,page+1);return;}
+            if(slot<0||slot>=18||start+slot>=mobs.length)return;
+            String mob=mobs[start+slot];
+            long price=SPAWNER_PRICES.getOrDefault(mob,25000L);
+            if(isShopOp(p)&&type==ContainerInput.QUICK_MOVE){
+                SPAWNER_PRICES.put(mob,button==0?Math.min(Integer.MAX_VALUE,price+1000):
+                    Math.max(0,price-1000));
+                spawnerShop(p,page);return;
+            }
+            if(p.getInventory().getFreeSlot()<0){message(p,"Make inventory room.");return;}
+            if(!charge(p.getUUID(),price)){message(p,"Not enough money.");return;}
+            p.getInventory().add(LifestealSpawners.spawner(mob,1));
+            message(p,"Bought "+mob+" spawner for $"+price+".");
+            spawnerShop(p,page);
         });
     }
     private static void shardShop(ServerPlayer p,boolean edit,int page){
