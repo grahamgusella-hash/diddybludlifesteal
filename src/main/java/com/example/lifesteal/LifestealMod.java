@@ -64,6 +64,7 @@ public class LifestealMod implements ModInitializer {
     }
 
     static Map<UUID, Long> economy() { return BALANCE; }
+    static Map<UUID, Long> shardBalances() { return SHARDS; }
     static Map<String, Long> shopPrices() { return SHOP; }
 
     @Override public void onInitialize() {
