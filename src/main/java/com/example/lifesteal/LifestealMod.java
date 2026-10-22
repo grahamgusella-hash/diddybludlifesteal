@@ -84,24 +84,7 @@ public class LifestealMod implements ModInitializer {
                 return InteractionResult.SUCCESS;
             }
         });
-        Identifier tabId = Identifier.fromNamespaceAndPath(MODID, "custom");
-        Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, ResourceKey.create(BuiltInRegistries.CREATIVE_MODE_TAB.key(), tabId),
-                CreativeModeTab.builder(CreativeModeTab.Row.TOP, 0).icon(() -> new ItemStack(HEART))
-                        .title(Component.translatable("itemGroup.lifesteal.custom"))
-                        .displayItems((params, output) -> {
-                            // The Creative screen sets hasPermissions for players allowed operator items.
-                            // A tab with no items is hidden by Minecraft itself.
-                            if (!params.hasPermissions()) return;
-                            output.accept(HEART);
-                            // Visual prototype spawners. Mob type is not retained on placement.
-                            for (String mob : List.of("zombie", "skeleton", "spider", "creeper", "enderman",
-                                    "blaze", "pig", "cow", "sheep", "chicken", "iron_golem")) {
-                                ItemStack spawner = new ItemStack(Items.SPAWNER);
-                                spawner.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                                        Component.literal(mob + " Spawner"));
-                                output.accept(spawner);
-                            }
-                        }).build());
+        // The OP-only /customitems chest GUI replaces the Creative inventory tab.
         SHOP.put("minecraft:diamond", 500L);
         SHOP.put("minecraft:netherite_ingot", 5000L);
         SHOP.put("minecraft:golden_apple", 800L);
