@@ -44,6 +44,40 @@ import static net.minecraft.commands.Commands.literal;
 public class LifestealMod implements ModInitializer {
     private static final String MODID = "lifesteal";
     public static Item HEART;
+    // The limit is counted in hearts, not health points. OP-configurable.
+    private static int maxHearts = 100;
+    private static net.minecraft.server.MinecraftServer heartConfigServer;
+    private static java.nio.file.Path heartConfigPath() {
+        return heartConfigServer.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+            .resolve("lifesteal-heart-limit.properties");
+    }
+    private static void readHeartLimit(net.minecraft.server.MinecraftServer server) {
+        heartConfigServer = server;
+        java.nio.file.Path path = heartConfigPath();
+        if (!java.nio.file.Files.exists(path)) return;
+        java.util.Properties props = new java.util.Properties();
+        try (java.io.InputStream in = java.nio.file.Files.newInputStream(path)) {
+            props.load(in);
+            int value = Integer.parseInt(props.getProperty("max-hearts", "100"));
+            if (value >= 1 && value <= 500) maxHearts = value;
+        } catch (Exception ex) {
+            System.err.println("[Lifesteal] Could not load heart limit: " + ex.getMessage());
+        }
+    }
+    private static void saveHeartLimit() {
+        if (heartConfigServer == null) return;
+        try {
+            java.nio.file.Path path = heartConfigPath();
+            java.nio.file.Files.createDirectories(path.getParent());
+            java.util.Properties props = new java.util.Properties();
+            props.setProperty("max-hearts", Integer.toString(maxHearts));
+            try (java.io.OutputStream out = java.nio.file.Files.newOutputStream(path)) {
+                props.store(out, "Diddyblud Lifesteal heart cap");
+            }
+        } catch (Exception ex) {
+            System.err.println("[Lifesteal] Could not save heart limit: " + ex.getMessage());
+        }
+    }
     private static final Map<UUID, Long> BALANCE = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> SHARDS = new ConcurrentHashMap<>();
     private static final Map<UUID, net.minecraft.core.BlockPos> HOMES = new ConcurrentHashMap<>();
@@ -70,6 +104,10 @@ public class LifestealMod implements ModInitializer {
     @Override public void onInitialize() {
         SmpMenus.init();
         LifestealSpawners.init();
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTED
+            .register(LifestealMod::readHeartLimit);
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING
+            .register(server -> saveHeartLimit());
         // Vanilla Nether Star, identified via persistent vanilla custom_data.
         // Do NOT register a new item ID: a vanilla client cannot decode that registry.
         HEART = Items.NETHER_STAR;
@@ -90,12 +128,12 @@ public class LifestealMod implements ModInitializer {
             if (loser.getUUID().equals(winner.getUUID())) return;
             var l = loser.getAttribute(Attributes.MAX_HEALTH);
             var w = winner.getAttribute(Attributes.MAX_HEALTH);
-            if (l == null || w == null || l.getBaseValue() <= 2 || w.getBaseValue() >= 40) return;
+            if (l == null || w == null || l.getBaseValue() <= 2 || w.getBaseValue() >= maxHearts * 2.0) return;
             l.setBaseValue(l.getBaseValue() - 2);
             w.setBaseValue(w.getBaseValue() + 2);
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> {
-            dispatcher.register(literal("withdraw").then(argument("amount", IntegerArgumentType.integer(1, 19))
+            dispatcher.register(literal("withdraw").then(argument("amount", IntegerArgumentType.integer(1, 64))
                 .executes(ctx -> {
                     ServerPlayer p = ctx.getSource().getPlayerOrException();
                     int amount = IntegerArgumentType.getInteger(ctx, "amount");
@@ -111,16 +149,26 @@ public class LifestealMod implements ModInitializer {
                 ServerPlayer p = ctx.getSource().getPlayerOrException();
                 return tell(p, "Hearts: " + (int)(p.getAttribute(Attributes.MAX_HEALTH).getBaseValue()/2));
             })
+                .then(literal("max").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .executes(ctx -> tell(ctx.getSource().getPlayerOrException(),
+                        "Current maximum: " + maxHearts + " hearts."))
+                    .then(argument("amount", IntegerArgumentType.integer(1, 500))
+                        .executes(ctx -> {
+                            maxHearts = IntegerArgumentType.getInteger(ctx, "amount");
+                            saveHeartLimit();
+                            return tell(ctx.getSource().getPlayerOrException(),
+                                "Server heart maximum is now " + maxHearts + " (saved).");
+                        })))
                 // OP-only; a granted heart means one extra maximum-health heart, not an item.
                 .then(literal("give").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                     .then(argument("player", EntityArgument.player())
-                    .then(argument("amount", IntegerArgumentType.integer(1, 19))
+                    .then(argument("amount", IntegerArgumentType.integer(1, 64))
                     .executes(ctx -> changeHearts(
                         ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
                         IntegerArgumentType.getInteger(ctx, "amount"), false)))))
                 .then(literal("set").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                     .then(argument("player", EntityArgument.player())
-                    .then(argument("amount", IntegerArgumentType.integer(1, 20))
+                    .then(argument("amount", IntegerArgumentType.integer(1, 500))
                     .executes(ctx -> changeHearts(
                         ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
                         IntegerArgumentType.getInteger(ctx, "amount"), true))))));
@@ -217,8 +265,8 @@ public class LifestealMod implements ModInitializer {
         }
         int current = (int) Math.round(maxHealth.getBaseValue() / 2.0);
         int resulting = set ? hearts : current + hearts;
-        if (resulting < 1 || resulting > 20) {
-            source.sendSystemMessage(Component.literal("Heart limit is 1 to 20. "
+        if (resulting < 1 || resulting > maxHearts) {
+            source.sendSystemMessage(Component.literal("Heart limit is 1 to " + maxHearts + ". "
                     + player.getName().getString() + " currently has " + current + "."));
             return 0;
         }
@@ -253,8 +301,8 @@ public class LifestealMod implements ModInitializer {
     private static InteractionResult redeemHeart(ServerPlayer p, ItemStack held) {
         if (p.isSpectator()) return InteractionResult.PASS;
         var maxHealth = p.getAttribute(Attributes.MAX_HEALTH);
-        if (maxHealth == null || maxHealth.getBaseValue() >= 40) {
-            tell(p, "You have reached the 20-heart maximum.");
+        if (maxHealth == null || maxHealth.getBaseValue() >= maxHearts * 2.0) {
+            tell(p, "You have reached the " + maxHearts + "-heart maximum.");
             return InteractionResult.FAIL;
         }
         maxHealth.setBaseValue(maxHealth.getBaseValue() + 2);
