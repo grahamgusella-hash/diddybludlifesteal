@@ -122,50 +122,134 @@ public final class SmpMenus {
         });
     }
 
+    // Main shop categories follow the positions in the supplied Donut SMP screenshot.
+    private record ShopCategory(String id, String title, Item icon, int slot) {}
+    private static final List<ShopCategory> SHOP_CATEGORIES = List.of(
+        new ShopCategory("totems", "Totems & Combat", Items.TOTEM_OF_UNDYING, 12),
+        new ShopCategory("enchants", "Enchantments", Items.ENCHANTED_BOOK, 13),
+        new ShopCategory("ores", "Ores & Valuables", Items.DIAMOND, 14),
+        new ShopCategory("drops", "Mob Drops", Items.BLAZE_POWDER, 20),
+        new ShopCategory("wood", "Wood & Blocks", Items.OAK_LOG, 21),
+        new ShopCategory("farming", "Farming & Food", Items.CARROT, 22),
+        new ShopCategory("storage", "Storage & Utility", Items.CHEST, 23),
+        new ShopCategory("redstone", "Redstone", Items.REDSTONE, 24)
+    );
+    // Category choices made using the OP editor are temporary until server persistence is added.
+    private static final Map<String,String> SHOP_CATEGORY_OVERRIDES = new HashMap<>();
+
+    private static String categoryOf(String id){
+        String assigned=SHOP_CATEGORY_OVERRIDES.get(id);
+        if(assigned!=null)return assigned;
+        String s=id.toLowerCase(Locale.ROOT);
+        if(s.contains("heart")||s.contains("totem")||s.contains("sword")||
+           s.contains("shield")||s.contains("armor")||s.contains("golden_apple"))return "totems";
+        if(s.contains("enchant")||s.contains("book")||s.contains("anvil")||
+           s.contains("experience"))return "enchants";
+        if(s.contains("diamond")||s.contains("netherite")||s.contains("emerald")||
+           s.contains("iron")||s.contains("gold")||s.contains("ore")||
+           s.contains("lapis")||s.contains("copper"))return "ores";
+        if(s.contains("blaze")||s.contains("bone")||s.contains("gunpowder")||
+           s.contains("string")||s.contains("rotten")||s.contains("ender_pearl")||
+           s.contains("slime")||s.contains("ghast"))return "drops";
+        if(s.contains("log")||s.contains("plank")||s.contains("wood")||
+           s.contains("stone")||s.contains("dirt")||s.contains("cobble")||
+           s.contains("brick"))return "wood";
+        if(s.contains("carrot")||s.contains("potato")||s.contains("seed")||
+           s.contains("wheat")||s.contains("apple")||s.contains("bread")||
+           s.contains("beef")||s.contains("pork"))return "farming";
+        if(s.contains("redstone")||s.contains("repeater")||s.contains("piston")||
+           s.contains("observer")||s.contains("comparator")||s.contains("hopper"))return "redstone";
+        return "storage";
+    }
+    private static ShopCategory shopCategory(String id){
+        for(ShopCategory category:SHOP_CATEGORIES)if(category.id().equals(id))return category;
+        return SHOP_CATEGORIES.get(0);
+    }
+    private static boolean isShopOp(ServerPlayer p){
+        return Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(p.createCommandSourceStack());
+    }
     private static void shop(ServerPlayer p,boolean edit){
+        boolean op=isShopOp(p);
+        if(!op)edit=false;
+        final boolean editing=edit;
         ItemStack[] icons=new ItemStack[27];
-        List<String> ids=new ArrayList<>(PRICES.keySet());
-        for(int i=0;i<Math.min(ids.size(),18);i++){
-            String id=ids.get(i);Item item=getItem(id);
+        for(ShopCategory category:SHOP_CATEGORIES)
+            icons[category.slot()]=icon(category.icon(),category.title()+" - Click to browse");
+        if(op)icons[26]=icon(Items.COMPARATOR,editing?"Admin editing ON - Click to exit":"Admin Settings - Click to edit");
+        menu(p,editing?"Shop | Admin Menu":"Shop | Menu",icons,(slot,button,type)->{
+            if(slot==26&&isShopOp(p)){shop(p,!editing);return;}
+            for(ShopCategory category:SHOP_CATEGORIES)
+                if(slot==category.slot()){
+                    shopItems(p,category.id(),editing,0);return;
+                }
+        });
+    }
+    private static void shopItems(ServerPlayer p,String categoryId,boolean edit,int page){
+        boolean op=isShopOp(p);
+        if(!op)edit=false;
+        final boolean editing=edit;
+        List<String> ids=new ArrayList<>();
+        for(String id:PRICES.keySet())if(categoryId.equals(categoryOf(id)))ids.add(id);
+        final int offset=Math.max(0,page)*18;
+        ItemStack[] icons=new ItemStack[27];
+        for(int i=0;i<18&&offset+i<ids.size();i++){
+            String id=ids.get(offset+i);
+            Item item=getItem(id);
             if(item!=null)icons[i]=icon(item,id+" | Buy $"+PRICES.get(id)+" | Sell $"+PRICES.get(id)/2);
         }
-        boolean op=Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(p.createCommandSourceStack());
+        icons[18]=icon(Items.ARROW,"Back to shop categories");
+        icons[19]=icon(Items.PAPER,"Previous page");
+        icons[25]=icon(Items.PAPER,"Next page");
         icons[22]=icon(Items.EMERALD,"Balance: $"+balance(p.getUUID()));
-        if(op)icons[26]=icon(Items.COMPARATOR,edit?"Admin editing ON":"Admin Settings");
-        if(edit)icons[19]=icon(Items.ANVIL,"Hold item and click to add");
-        menu(p,edit?"Shop Admin Editor":"SMP Shop",icons,(slot,button,type)->{
-            if(slot==26&&op){shop(p,!edit);return;}
-            if(slot==19&&edit&&op){
+        if(editing)icons[20]=icon(Items.ANVIL,"Hold an item and click to add it to this category");
+        if(op)icons[26]=icon(Items.COMPARATOR,editing?"Admin: Left +$100, right -$100, shift-click removes":"Admin Settings");
+        menu(p,shopCategory(categoryId).title()+(editing?" | Edit":" | Shop"),icons,(slot,button,type)->{
+            if(slot==18){shop(p,editing);return;}
+            if(slot==19){shopItems(p,categoryId,editing,Math.max(0,page-1));return;}
+            if(slot==25){if(offset+18<ids.size())shopItems(p,categoryId,editing,page+1);return;}
+            if(slot==26&&isShopOp(p)){shopItems(p,categoryId,!editing,page);return;}
+            if(slot==20&&editing&&isShopOp(p)){
                 ItemStack held=p.getMainHandItem();
-                if(!held.isEmpty()){
-                    String id=BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
-                    PRICES.putIfAbsent(id,100L);shop(p,true);
-                }else message(p,"Hold the item you want to add.");
-                return;
+                if(held.isEmpty()){message(p,"Hold an item to add it to this category.");return;}
+                String id=BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+                PRICES.putIfAbsent(id,100L);
+                SHOP_CATEGORY_OVERRIDES.put(id,categoryId);
+                shopItems(p,categoryId,true,0);return;
             }
-            if(slot>=ids.size()||slot>=18)return;
-            String id=ids.get(slot);long price=PRICES.get(id);Item item=getItem(id);
+            if(slot<0||slot>=18||offset+slot>=ids.size())return;
+            String id=ids.get(offset+slot);
+            Long priceObj=PRICES.get(id);
+            if(priceObj==null)return;
+            long price=priceObj;
+            Item item=getItem(id);
             if(item==null)return;
-            if(edit&&op){
-                if(type==ContainerInput.QUICK_MOVE)PRICES.remove(id);
-                else if(button==0)PRICES.put(id,Math.min(Integer.MAX_VALUE,price+100));
-                else PRICES.put(id,Math.max(0,price-100));
-                shop(p,true);return;
+            if(editing&&isShopOp(p)){
+                if(type==ContainerInput.QUICK_MOVE){
+                    PRICES.remove(id);SHOP_CATEGORY_OVERRIDES.remove(id);
+                }else if(button==0){
+                    PRICES.put(id,Math.min(Integer.MAX_VALUE,price+100));
+                }else{
+                    PRICES.put(id,Math.max(0,price-100));
+                }
+                shopItems(p,categoryId,true,page);return;
             }
             if(button==0){
-                if(p.getInventory().getFreeSlot()<0){message(p,"Make inventory room.");return;}
+                if(p.getInventory().getFreeSlot()<0){message(p,"Make room in your inventory.");return;}
                 if(!charge(p.getUUID(),price)){message(p,"Not enough money.");return;}
-                p.getInventory().add(new ItemStack(item));shop(p,false);
+                p.getInventory().add(new ItemStack(item));
+                shopItems(p,categoryId,false,page);
             }else{
                 boolean sold=false;
                 for(int i=0;i<p.getInventory().getContainerSize();i++){
                     ItemStack stack=p.getInventory().getItem(i);
-                    if(stack.is(item)&&!stack.isEmpty()){
-                        try{reward(p.getUUID(),price/2);}catch(IllegalArgumentException ex){message(p,"Balance too high.");return;}
+                    if(!stack.isEmpty()&&stack.is(item)){
+                        try{reward(p.getUUID(),price/2);}
+                        catch(IllegalArgumentException ex){message(p,"Balance too high.");return;}
                         stack.shrink(1);sold=true;break;
                     }
                 }
-                if(!sold)message(p,"You don't have this item.");else shop(p,false);
+                if(!sold)message(p,"You don't have this item.");
+                else shopItems(p,categoryId,false,page);
             }
         });
     }
