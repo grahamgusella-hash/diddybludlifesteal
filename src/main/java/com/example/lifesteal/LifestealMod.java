@@ -245,7 +245,7 @@ public class LifestealMod implements ModInitializer {
     public static boolean isHeart(ItemStack stack) {
         return !stack.isEmpty() && stack.is(Items.NETHER_STAR)
             && stack.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA,
-                net.minecraft.world.item.component.CustomData.EMPTY).contains("lifesteal_heart");
+                net.minecraft.world.item.component.CustomData.EMPTY).copyTag().contains("lifesteal_heart");
     }
 
     private static InteractionResult redeemHeart(ServerPlayer p, ItemStack held) {
