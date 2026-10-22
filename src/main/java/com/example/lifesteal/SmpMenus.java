@@ -538,6 +538,7 @@ public final class SmpMenus {
             if(isShopOp(p)&&type==ContainerInput.QUICK_MOVE){
                 SPAWNER_PRICES.put(mob,button==0?Math.min(Integer.MAX_VALUE,price+1000):
                     Math.max(0,price-1000));
+                saveShopSettings();
                 spawnerShop(p,page);return;
             }
             if(p.getInventory().getFreeSlot()<0){message(p,"Make inventory room.");return;}
@@ -578,6 +579,7 @@ public final class SmpMenus {
                 ItemStack held=p.getMainHandItem();
                 if(held.isEmpty()){message(p,"Hold an item to add it.");return;}
                 SHARD_PRICES.putIfAbsent(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(),100L);
+                saveShopSettings();
                 shardShop(p,true,0);return;
             }
             if(slot<0||slot>=18||start+slot>=ids.size())return;
@@ -589,6 +591,7 @@ public final class SmpMenus {
                 }
                 else if(button==0)SHARD_PRICES.put(id,Math.min(999999999L,price+10));
                 else SHARD_PRICES.put(id,Math.max(0,price-10));
+                if(type!=ContainerInput.QUICK_MOVE)saveShopSettings();
                 shardShop(p,true,page);return;
             }
             if(DISABLED_SHARD_ITEMS.contains(id)){message(p,"This shard item is temporarily disabled.");return;}
@@ -636,6 +639,7 @@ public final class SmpMenus {
                 if(held.isEmpty()){message(p,"Hold an item to add it to this category.");return;}
                 String id=LifestealMod.isHeart(held) ? "lifesteal:heart" : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
                 PRICES.putIfAbsent(id,100L);
+                saveShopSettings();
                 SHOP_CATEGORY_OVERRIDES.put(id,categoryId);
                 shopItems(p,categoryId,true,0);return;
             }
@@ -654,6 +658,7 @@ public final class SmpMenus {
                 }else{
                     PRICES.put(id,Math.max(0,price-100));
                 }
+                if(type!=ContainerInput.QUICK_MOVE)saveShopSettings();
                 shopItems(p,categoryId,true,page);return;
             }
             if(DISABLED_ITEMS.contains(id)){
