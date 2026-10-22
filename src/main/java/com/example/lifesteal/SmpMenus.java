@@ -96,7 +96,15 @@ public final class SmpMenus {
         },Component.literal(title)));
     }
     private static Item getItem(String id){
+        if("lifesteal:heart".equals(id)) return Items.NETHER_STAR;
         try{return BuiltInRegistries.ITEM.getValue(Identifier.parse(id));}catch(Exception e){return null;}
+    }
+    private static ItemStack shopItemStack(String id){
+        return "lifesteal:heart".equals(id) ? LifestealMod.heartStack(1) : new ItemStack(getItem(id));
+    }
+    private static boolean matchesShopItem(String id,ItemStack stack){
+        return "lifesteal:heart".equals(id) ? LifestealMod.isHeart(stack) :
+            !LifestealMod.isHeart(stack) && stack.is(getItem(id));
     }
     private static int setHeldItemPrices(ServerPlayer p,long buy,long sell){
         ItemStack held=p.getMainHandItem();
@@ -124,7 +132,7 @@ public final class SmpMenus {
     /** OP-only server-side menu; ordinary clients see a vanilla chest inventory. */
     private static void customItems(ServerPlayer p){
         ItemStack[] icons = new ItemStack[27];
-        icons[10] = icon(LifestealMod.HEART, "Heart — click to receive 1");
+        icons[10] = LifestealMod.heartStack(1);
         // Mob spawner entries are currently generic spawner items.
         // Named variants cannot retain their mob type until block entity data support is implemented.
         String[] mobs = {"Zombie", "Skeleton", "Spider", "Creeper", "Enderman",
@@ -144,7 +152,7 @@ public final class SmpMenus {
                 message(p,"Make room in your inventory first.");return;
             }
             if (slot==10) {
-                p.getInventory().add(new ItemStack(LifestealMod.HEART));
+                p.getInventory().add(LifestealMod.heartStack(1));
                 message(p,"Received one Heart.");
                 return;
             }
@@ -354,7 +362,11 @@ public final class SmpMenus {
         int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
         for(int i=0;i<18&&start+i<ids.size();i++){
             String id=ids.get(start+i);Item item=getItem(id);
-            if(item!=null)icons[i]=icon(item,id+" | "+SHARD_PRICES.get(id)+" shards"+status(DISABLED_SHARD_ITEMS.contains(id)));
+            if(item!=null){
+                icons[i]=shopItemStack(id);
+                icons[i].set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    Component.literal(id+" | "+SHARD_PRICES.get(id)+" shards"+status(DISABLED_SHARD_ITEMS.contains(id))));
+            }
         }
         icons[18]=icon(Items.ARROW,"Back to Shop");
         icons[19]=icon(Items.PAPER,"Previous Page");
@@ -389,7 +401,7 @@ public final class SmpMenus {
             if(!chargeShards(p.getUUID(),price)){message(p,"Not enough shards.");return;}
             Item item=getItem(id);
             if(item==null){SHARDS.merge(p.getUUID(),price,Long::sum);message(p,"Item unavailable.");return;}
-            p.getInventory().add(new ItemStack(item));
+            p.getInventory().add(shopItemStack(id));
             shardShop(p,false,page);
         });
     }
@@ -407,7 +419,11 @@ public final class SmpMenus {
         for(int i=0;i<18&&offset+i<ids.size();i++){
             String id=ids.get(offset+i);
             Item item=getItem(id);
-            if(item!=null)icons[i]=icon(item,id+" | Buy $"+PRICES.get(id)+" | Sell $"+sellPrice(id)+status(DISABLED_ITEMS.contains(id)));
+            if(item!=null){
+                icons[i]=shopItemStack(id);
+                icons[i].set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    Component.literal(id+" | Buy $"+PRICES.get(id)+" | Sell $"+sellPrice(id)+status(DISABLED_ITEMS.contains(id))));
+            }
         }
         icons[18]=icon(Items.ARROW,"Back to shop categories");
         icons[19]=icon(Items.PAPER,"Previous page");
@@ -451,13 +467,13 @@ public final class SmpMenus {
             if(button==0){
                 if(p.getInventory().getFreeSlot()<0){message(p,"Make room in your inventory.");return;}
                 if(!charge(p.getUUID(),price)){message(p,"Not enough money.");return;}
-                p.getInventory().add(new ItemStack(item));
+                p.getInventory().add(shopItemStack(id));
                 shopItems(p,categoryId,false,page);
             }else{
                 boolean sold=false;
                 for(int i=0;i<p.getInventory().getContainerSize();i++){
                     ItemStack stack=p.getInventory().getItem(i);
-                    if(!stack.isEmpty()&&stack.is(item)){
+                    if(!stack.isEmpty()&&matchesShopItem(id,stack)){
                         try{reward(p.getUUID(),sellPrice(id));}
                         catch(IllegalArgumentException ex){message(p,"Balance too high.");return;}
                         stack.shrink(1);sold=true;break;
