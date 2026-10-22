@@ -343,6 +343,17 @@ public final class SmpMenus {
         addStock("totems","minecraft:diamond_sword",8000L,1200L);
         addStock("totems","minecraft:bow",700L,110L);
         addStock("totems","minecraft:arrow",45L,8L);
+        addStock("totems","minecraft:diamond_helmet",11000L,1800L);
+        addStock("totems","minecraft:diamond_chestplate",18000L,2900L);
+        addStock("totems","minecraft:diamond_leggings",15500L,2500L);
+        addStock("totems","minecraft:diamond_boots",10000L,1600L);
+        addStock("totems","minecraft:netherite_helmet",58000L,9500L);
+        addStock("totems","minecraft:netherite_chestplate",80000L,13000L);
+        addStock("totems","minecraft:netherite_leggings",70000L,11500L);
+        addStock("totems","minecraft:netherite_boots",50000L,8200L);
+        addStock("totems","minecraft:mace",70000L,12000L);
+        addStock("totems","minecraft:obsidian",250L,38L);
+        addStock("totems","minecraft:crying_obsidian",850L,120L);
         addStock("totems","lifesteal:heart",75000L,15000L);
         addStock("enchants","minecraft:book",140L,28L);
         addStock("enchants","minecraft:bookshelf",550L,100L);
