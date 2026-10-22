@@ -327,6 +327,92 @@ public final class SmpMenus {
         SHARD_PRICES.put("minecraft:netherite_ingot", 250L);
         SHARD_PRICES.put("lifesteal:heart", 500L);
     }
+    /**
+     * Starter shop catalog. Defaults are added only when absent; persisted OP prices
+     * load afterward and override these defaults. Use explicit category assignments
+     * so all entries are filed correctly regardless of item-name heuristics.
+     */
+    static void seedDefaultShopStock() {
+        // Totems and combat equipment
+        addStock("totems","minecraft:totem_of_undying",15000);
+        addStock("totems","minecraft:enchanted_golden_apple",12000);
+        addStock("totems","minecraft:golden_apple",800);
+        addStock("totems","minecraft:ender_crystal",1800);
+        addStock("totems","minecraft:shield",350);
+        addStock("totems","minecraft:diamond_sword",2500);
+        addStock("totems","minecraft:bow",320);
+        addStock("totems","minecraft:arrow",15);
+        addStock("totems","lifesteal:heart",10000);
+        // Enchanting supplies. A plain book is not misrepresented as enchanted.
+        addStock("enchants","minecraft:book",75);
+        addStock("enchants","minecraft:bookshelf",250);
+        addStock("enchants","minecraft:lapis_lazuli",35);
+        addStock("enchants","minecraft:experience_bottle",150);
+        addStock("enchants","minecraft:enchanting_table",4500);
+        addStock("enchants","minecraft:anvil",900);
+        addStock("enchants","minecraft:grindstone",250);
+        // Mob drops
+        addStock("drops","minecraft:blaze_rod",250);
+        addStock("drops","minecraft:bone",40);
+        addStock("drops","minecraft:rotten_flesh",12);
+        addStock("drops","minecraft:gunpowder",160);
+        addStock("drops","minecraft:string",55);
+        addStock("drops","minecraft:ender_pearl",350);
+        addStock("drops","minecraft:slime_ball",200);
+        addStock("drops","minecraft:spider_eye",50);
+        addStock("drops","minecraft:leather",75);
+        // Wood and general building materials
+        addStock("wood","minecraft:oak_log",65);
+        addStock("wood","minecraft:spruce_log",65);
+        addStock("wood","minecraft:birch_log",65);
+        addStock("wood","minecraft:dark_oak_log",85);
+        addStock("wood","minecraft:jungle_log",85);
+        addStock("wood","minecraft:mangrove_log",95);
+        addStock("wood","minecraft:oak_planks",20);
+        addStock("wood","minecraft:spruce_planks",20);
+        addStock("wood","minecraft:stone",25);
+        addStock("wood","minecraft:cobblestone",12);
+        addStock("wood","minecraft:dirt",8);
+        // Food and crops
+        addStock("farming","minecraft:carrot",30);
+        addStock("farming","minecraft:potato",30);
+        addStock("farming","minecraft:wheat",35);
+        addStock("farming","minecraft:wheat_seeds",12);
+        addStock("farming","minecraft:sugar_cane",40);
+        addStock("farming","minecraft:pumpkin",65);
+        addStock("farming","minecraft:melon_slice",16);
+        addStock("farming","minecraft:bread",50);
+        addStock("farming","minecraft:cooked_beef",85);
+        addStock("farming","minecraft:cooked_chicken",75);
+        addStock("farming","minecraft:golden_carrot",220);
+        // Storage and utility
+        addStock("storage","minecraft:chest",160);
+        addStock("storage","minecraft:barrel",170);
+        addStock("storage","minecraft:ender_chest",3500);
+        addStock("storage","minecraft:shulker_box",18000);
+        addStock("storage","minecraft:hopper",750);
+        addStock("storage","minecraft:crafting_table",120);
+        addStock("storage","minecraft:furnace",200);
+        addStock("storage","minecraft:diamond",500);
+        addStock("storage","minecraft:netherite_ingot",5000);
+        // Redstone
+        addStock("redstone","minecraft:redstone",45);
+        addStock("redstone","minecraft:repeater",240);
+        addStock("redstone","minecraft:comparator",300);
+        addStock("redstone","minecraft:observer",340);
+        addStock("redstone","minecraft:piston",250);
+        addStock("redstone","minecraft:sticky_piston",450);
+        addStock("redstone","minecraft:redstone_block",420);
+        addStock("redstone","minecraft:lever",50);
+        addStock("redstone","minecraft:dispenser",360);
+        addStock("redstone","minecraft:dropper",270);
+        addStock("redstone","minecraft:daylight_detector",400);
+    }
+    private static void addStock(String category,String itemId,long defaultPrice) {
+        PRICES.putIfAbsent(itemId,defaultPrice);
+        SHOP_CATEGORY_OVERRIDES.putIfAbsent(itemId,category);
+    }
+
     private static void defineCategory(String id,String title,Item icon,int slot) {
         SHOP_CATEGORIES.put(id,new ShopCategory(id,title,icon,slot));
     }
