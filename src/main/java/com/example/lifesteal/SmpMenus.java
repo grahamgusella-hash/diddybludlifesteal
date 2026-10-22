@@ -45,6 +45,9 @@ public final class SmpMenus {
             dispatcher.register(literal("customitems")
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .executes(c->{customItems(c.getSource().getPlayerOrException());return 1;}));
+            dispatcher.register(literal("spawner").executes(c->{
+                spawnerOverview(c.getSource().getPlayerOrException());return 1;
+            }));
             dispatcher.register(literal("shop").executes(c->{shop(c.getSource().getPlayerOrException(),false);return 1;}));
             // Set both prices for the held item's normal-money shop listing.
             // Restricted to OP; this does not modify shard prices.
@@ -290,6 +293,40 @@ public final class SmpMenus {
             else shopItems(p,chosen.id(),editing,0);
         });
     }
+    /**
+     * Donut-style spawner UI preview.
+     * Not connected to a block entity until mob identity, persisted stack count,
+     * virtual production and secure collection are implemented.
+     */
+    private static void spawnerOverview(ServerPlayer p){
+        ItemStack[] icons=new ItemStack[27];
+        icons[4]=icon(Items.SPAWNER,"Spawner Manager — Preview");
+        icons[10]=icon(Items.CHEST,"Storage — stored mob drops");
+        icons[12]=icon(Items.PLAYER_HEAD,"Sell All — sell stored drops and collect XP");
+        icons[14]=icon(Items.EXPERIENCE_BOTTLE,"Collect XP");
+        icons[16]=icon(Items.ANVIL,"Stack Spawners — same mob type only");
+        icons[22]=icon(Items.PAPER,"Right-click an owned spawner to manage it (planned)");
+        icons[26]=icon(Items.BARRIER,"Close");
+        menu(p,"Spawner Manager (Preview)",icons,(slot,button,type)->{
+            if(slot==26){p.closeContainer();return;}
+            if(slot==16){spawnerStackHelp(p);return;}
+            if(slot==10||slot==12||slot==14){
+                message(p,"Spawner storage and virtual generation are not enabled yet.");
+            }
+        });
+    }
+    private static void spawnerStackHelp(ServerPlayer p){
+        ItemStack[] icons=new ItemStack[27];
+        icons[11]=icon(Items.SPAWNER,"1 spawner: add to matching placed spawner");
+        icons[13]=icon(Items.SPAWNER,"Shift + right-click: stack held amount (planned)");
+        icons[15]=icon(Items.IRON_PICKAXE,"Mine without Silk Touch (planned)");
+        icons[22]=icon(Items.ARROW,"Back");
+        menu(p,"Spawner Stacking (Preview)",icons,(slot,button,type)->{
+            if(slot==22)spawnerOverview(p);
+            else message(p,"Spawner stacking is not active yet; no items were consumed.");
+        });
+    }
+
     private static void spawnerShop(ServerPlayer p,int page){
         if(DISABLED_CATEGORIES.contains("spawners")&&!isShopOp(p)){message(p,"Spawners category is disabled.");return;}
         int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
