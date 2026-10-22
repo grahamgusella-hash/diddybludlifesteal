@@ -89,3 +89,10 @@ OPs still use **`/sell price <buy> <sell>`** while holding an item to set **both
 ## Configurable max hearts (latest)
 
 The previous **20-heart limit** has been replaced by a **100-heart default maximum**. OP command `/hearts max <amount>` accepts 1–500 hearts, writes the configured limit to `lifesteal-heart-limit.properties` inside the world directory and survives server restarts. `/hearts max` displays the current limit. PvP transfer, Heart redemption, and admin heart limits use this setting; `/withdraw` accepts up to 64 hearts per command. This update is not yet compiled or in-game tested; a new server JAR must be built and deployed before its messages change.
+
+## Short money amounts (latest)
+
+The money and shard give commands and player payments accept case-insensitive suffixes:
+- `k` = 1,000; `m` = 1,000,000; `b` = 1,000,000,000; `t` = 1,000,000,000,000.
+- Examples: `/money give Steve 1b`, `/money give Steve 1.5m`, `/shards give Steve 50k`, `/pay Steve 250k`.
+- Plain whole numbers remain valid. Zero, negative, fractional-unit and overflowed amounts are rejected. Command changes are committed as source and still need to be compiled and tested on Minecraft 26.3.
