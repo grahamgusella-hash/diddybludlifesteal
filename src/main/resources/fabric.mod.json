@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"lifesteal","version":"${version}","name":"Lifesteal SMP Starter","description":"Prototype for Minecraft 26.3","environment":"*","entrypoints":{"main":["com.example.lifesteal.LifestealMod"]},"depends":{"fabricloader":">=0.19.5","minecraft":"26.3","java":">=25","fabric-api":"*"}}
