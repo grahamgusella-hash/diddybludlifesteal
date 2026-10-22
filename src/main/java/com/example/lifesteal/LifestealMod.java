@@ -202,7 +202,8 @@ public class LifestealMod implements ModInitializer {
                 .then(argument("price",IntegerArgumentType.integer(0)).executes(ctx -> {
                     String id=StringArgumentType.getString(ctx,"item");
                     long price=IntegerArgumentType.getInteger(ctx,"price"); SHOP.put(id,price);
-                    return tell(ctx.getSource().getPlayerOrException(),"Changed session shop price for "+id+" to $"+price);
+                    SmpMenus.saveShopSettings();
+                    return tell(ctx.getSource().getPlayerOrException(),"Saved buy price for "+id+" as $"+price);
                 })))));
         });
     }
