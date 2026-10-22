@@ -109,7 +109,7 @@ public final class SmpMenus {
     private static int setHeldItemPrices(ServerPlayer p,long buy,long sell){
         ItemStack held=p.getMainHandItem();
         if(held.isEmpty()){message(p,"Hold an item in your main hand first.");return 0;}
-        String id=BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+        String id=LifestealMod.isHeart(held) ? "lifesteal:heart" : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
         PRICES.put(id,buy);
         SELL_PRICES.put(id,sell);
         message(p,"Updated "+id+": buy $"+buy+", sell $"+sell+" (until server restart).");
@@ -439,7 +439,7 @@ public final class SmpMenus {
             if(slot==20&&editing&&isShopOp(p)){
                 ItemStack held=p.getMainHandItem();
                 if(held.isEmpty()){message(p,"Hold an item to add it to this category.");return;}
-                String id=BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+                String id=LifestealMod.isHeart(held) ? "lifesteal:heart" : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
                 PRICES.putIfAbsent(id,100L);
                 SHOP_CATEGORY_OVERRIDES.put(id,categoryId);
                 shopItems(p,categoryId,true,0);return;
