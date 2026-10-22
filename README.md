@@ -37,3 +37,10 @@ FalixNodes supports custom pack ZIP upload under Minecraft > Server Properties >
 ## Category-based /shop GUI
 
 The shop now opens a 3-row category menu matching the supplied screenshot's item positions: Totems & Combat, Enchantments, Ores & Valuables, Mob Drops, Wood & Blocks, Farming & Food, Storage & Utility, and Redstone. Clicking a category opens its buy/sell item page. Existing item prices are preserved and assigned to categories automatically. OP players see Admin Settings in the shop; in edit mode, they can hold an item and add it to the current category, change prices (left/right click), or remove entries (shift-click). These configurations currently reset on restart and the implementation is untested. Only the source on GitHub is updated: pull and compile before deployment.
+
+## Shop categories, shards and spawners (latest)
+
+- The diamond slot opens a **Shard Shop** using the existing shard balance, not regular money. OPs can edit its item list and shard prices inside the GUI. Default example listings: Diamond (50 shards), Netherite Ingot (250 shards), and Heart (500 shards); values can be changed in the editor.
+- In `/shop`, an OP clicks Admin Settings, renames a held item in an anvil, then clicks the Anvil **Add Category** button (slot 19). The held item's custom name becomes the category name and the held item becomes its icon. New categories can be browsed using the page arrows; click a category while editing to add items and prices.
+- A new Spawners category displays a paginated catalog of 37 mob types. **Purchases are intentionally disabled**: the mod still lacks reliable mob-specific block-entity data, placement for non-OP players, and mining/dropping with correct mob identity. The labels are previews only, not functional custom spawners.
+- These GUI settings currently exist only in memory and reset when the server restarts. Neither successful compilation nor in-game compatibility has been verified. Do not deploy to a production economy until persistence, transaction safety, and the full spawner mechanics are implemented and tested.
