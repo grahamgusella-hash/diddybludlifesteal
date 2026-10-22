@@ -3,6 +3,7 @@ package com.example.lifesteal;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -35,6 +36,7 @@ public final class SmpMenus {
     private static final Map<UUID,Long> SHARDS=LifestealMod.shardBalances();
     private static final Map<String,Long> SHARD_PRICES=new LinkedHashMap<>();
     private static final Map<String,Long> SPAWNER_PRICES=new LinkedHashMap<>();
+    private static net.minecraft.server.MinecraftServer shopServer;
     private record Listing(UUID owner,ItemStack stack,long price) {}
     private record Order(UUID owner,String itemId,int count,long unitPrice) {}
     private static final Map<Integer,Listing> AUCTIONS=new LinkedHashMap<>();
@@ -42,6 +44,14 @@ public final class SmpMenus {
     private static int nextListing=1,nextOrder=1;
     private static UUID queue=null;
     public static void init() {
+        ServerLifecycleEvents.SERVER_STARTED.register(server->{
+            shopServer=server;
+            loadShopPrices();
+        });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server->{
+            saveShopSettings();
+            shopServer=null;
+        });
         CommandRegistrationCallback.EVENT.register((dispatcher, registry, env)->{
             dispatcher.register(literal("customitems")
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
@@ -52,7 +62,9 @@ public final class SmpMenus {
             dispatcher.register(literal("shop").executes(c->{shop(c.getSource().getPlayerOrException(),false);return 1;}));
             // Set both prices for the held item's normal-money shop listing.
             // Restricted to OP; this does not modify shard prices.
-            dispatcher.register(literal("sell").then(literal("price")
+            dispatcher.register(literal("sell")
+                .executes(ctx->{sellGui(ctx.getSource().getPlayerOrException());return 1;})
+                .then(literal("price")
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .then(argument("buy",IntegerArgumentType.integer(0))
                 .then(argument("sell",IntegerArgumentType.integer(0))
@@ -113,12 +125,145 @@ public final class SmpMenus {
         String id=LifestealMod.isHeart(held) ? "lifesteal:heart" : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
         PRICES.put(id,buy);
         SELL_PRICES.put(id,sell);
-        message(p,"Updated "+id+": buy $"+buy+", sell $"+sell+" (until server restart).");
+        saveShopSettings();
+        message(p,"Updated "+id+": buy $"+buy+", sell $"+sell+" (saved permanently).");
         return 1;
     }
     private static long sellPrice(String id){
         Long explicit=SELL_PRICES.get(id);
         return explicit!=null?explicit:Math.max(0L,PRICES.getOrDefault(id,0L)/2);
+    }
+    /** World-specific persisted buy, sell, shard-shop, and spawner prices. */
+    private static java.nio.file.Path shopFile(){
+        return shopServer.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+            .resolve("lifesteal-shop-prices.properties");
+    }
+    public static void saveShopSettings(){
+        if(shopServer==null)return;
+        java.util.Properties props=new java.util.Properties();
+        PRICES.forEach((id,price)->props.setProperty("buy."+id,Long.toString(price)));
+        SELL_PRICES.forEach((id,price)->props.setProperty("sell."+id,Long.toString(price)));
+        SHARD_PRICES.forEach((id,price)->props.setProperty("shard."+id,Long.toString(price)));
+        SPAWNER_PRICES.forEach((id,price)->props.setProperty("spawner."+id,Long.toString(price)));
+        try{
+            java.nio.file.Path path=shopFile();
+            java.nio.file.Files.createDirectories(path.getParent());
+            java.nio.file.Path temp=path.resolveSibling(path.getFileName()+".tmp");
+            try(java.io.OutputStream out=java.nio.file.Files.newOutputStream(temp)){
+                props.store(out,"Diddyblud Lifesteal shop prices (persistent)");
+            }
+            try{
+                java.nio.file.Files.move(temp,path,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            }catch(java.nio.file.AtomicMoveNotSupportedException ex){
+                java.nio.file.Files.move(temp,path,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }catch(Exception ex){
+            System.err.println("[Lifesteal] Cannot save shop prices: "+ex.getMessage());
+        }
+    }
+    private static void loadShopPrices(){
+        java.nio.file.Path path=shopFile();
+        if(!java.nio.file.Files.exists(path))return;
+        java.util.Properties props=new java.util.Properties();
+        try(java.io.InputStream in=java.nio.file.Files.newInputStream(path)){
+            props.load(in);
+            for(String key:props.stringPropertyNames()){
+                long price;
+                try{price=Long.parseLong(props.getProperty(key));}
+                catch(NumberFormatException bad){continue;}
+                if(price<0||price>Integer.MAX_VALUE)continue;
+                if(key.startsWith("buy."))PRICES.put(key.substring(4),price);
+                else if(key.startsWith("sell."))SELL_PRICES.put(key.substring(5),price);
+                else if(key.startsWith("shard."))SHARD_PRICES.put(key.substring(6),price);
+                else if(key.startsWith("spawner."))SPAWNER_PRICES.put(key.substring(8),price);
+            }
+        }catch(Exception ex){
+            System.err.println("[Lifesteal] Cannot load shop prices: "+ex.getMessage());
+        }
+    }
+    /** Sell only configured, enabled standard items; Heart uses its unique tag. */
+    private static String itemSellId(ItemStack stack){
+        if(stack.isEmpty())return null;
+        if(LifestealSpawners.mobFromItem(stack)!=null)return null; // no tagged-spawner exploits
+        if(LifestealMod.isHeart(stack))return "lifesteal:heart";
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+    }
+    private static void sellGui(ServerPlayer p){
+        SimpleContainer deposits=new SimpleContainer(27);
+        for(int slot=18;slot<27;slot++)
+            deposits.setItem(slot,icon(Items.GRAY_STAINED_GLASS_PANE,""));
+        deposits.setItem(22,icon(Items.EMERALD,"CONFIRM SALE - Click to sell eligible deposited items"));
+        deposits.setItem(26,icon(Items.BARRIER,"Cancel and return items"));
+        p.openMenu(new SimpleMenuProvider((id,inventory,user)->
+            new ChestMenu(MenuType.GENERIC_9x3,id,inventory,deposits,3){
+                private boolean finished=false;
+                @Override public ItemStack quickMoveStack(Player player,int slot){
+                    return ItemStack.EMPTY; // no bulk-transfer into protected controls
+                }
+                @Override public void clicked(int slot,int button,ContainerInput type,Player player){
+                    if(finished)return;
+                    if(slot==26 && type==ContainerInput.PICKUP){
+                        p.closeContainer();return;
+                    }
+                    if(slot==22 && type==ContainerInput.PICKUP){
+                        long total=0;
+                        boolean any=false;
+                        for(int i=0;i<18;i++){
+                            ItemStack stack=deposits.getItem(i);
+                            String itemId=itemSellId(stack);
+                            if(itemId==null || !PRICES.containsKey(itemId) ||
+                               DISABLED_ITEMS.contains(itemId))continue;
+                            long unit=sellPrice(itemId);
+                            if(unit<=0)continue;
+                            long quantity=stack.getCount();
+                            if(quantity>0){
+                                if(unit>(Long.MAX_VALUE-total)/quantity){
+                                    message(p,"Sale value exceeds allowed amount.");return;
+                                }
+                                total+=unit*quantity;any=true;
+                            }
+                        }
+                        if(!any){message(p,"No eligible priced items to sell.");return;}
+                        if(total>Long.MAX_VALUE-balance(p.getUUID())){
+                            message(p,"Balance limit reached.");return;
+                        }
+                        finished=true;
+                        for(int i=0;i<18;i++){
+                            ItemStack stack=deposits.getItem(i);
+                            String itemId=itemSellId(stack);
+                            if(itemId!=null && PRICES.containsKey(itemId) &&
+                               !DISABLED_ITEMS.contains(itemId) && sellPrice(itemId)>0)
+                                deposits.setItem(i,ItemStack.EMPTY);
+                        }
+                        reward(p.getUUID(),total);
+                        message(p,"Sold your items for $"+total+".");
+                        p.closeContainer();
+                        return;
+                    }
+                    // Only ordinary pickup clicks in the 18 deposit slots or player inventory.
+                    // Other click types are blocked to protect the confirmation buttons.
+                    if(type!=ContainerInput.PICKUP)return;
+                    if(slot>=18&&slot<27)return;
+                    super.clicked(slot,button,type,player);
+                }
+                @Override public void removed(Player player){
+                    // Never delete unsold items, including when the player disconnects.
+                    if(player instanceof ServerPlayer sp){
+                        for(int i=0;i<18;i++){
+                            ItemStack stack=deposits.removeItemNoUpdate(i);
+                            if(stack.isEmpty())continue;
+                            sp.getInventory().add(stack);
+                            if(!stack.isEmpty())
+                                sp.level().addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(
+                                    sp.level(),sp.getX(),sp.getY()+0.5,sp.getZ(),stack.copy()));
+                        }
+                    }
+                    super.removed(player);
+                }
+            },Component.literal("Sell Items | Deposit top two rows")));
     }
     private static String status(boolean disabled){return disabled?" [DISABLED]":" [ENABLED]";}
     private static long balance(UUID id){return CASH.getOrDefault(id,0L);}
