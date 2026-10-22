@@ -271,8 +271,7 @@ public final class SmpMenus {
     }
     private static void sellGui(ServerPlayer p){
         SimpleContainer deposits=new SimpleContainer(27);
-        for(int slot=18;slot<27;slot++)
-            deposits.setItem(slot,icon(net.minecraft.world.level.block.Blocks.GRAY_STAINED_GLASS_PANE.asItem(),""));
+        // Bottom row is kept empty except for confirm/cancel controls.
         deposits.setItem(22,icon(Items.EMERALD,"CONFIRM SALE - Click to sell eligible deposited items"));
         deposits.setItem(26,icon(Items.BARRIER,"Cancel and return items"));
         p.openMenu(new SimpleMenuProvider((id,inventory,user)->
