@@ -28,6 +28,10 @@ public final class SmpMenus {
     private SmpMenus() {}
     private static final Map<UUID,Long> CASH=LifestealMod.economy();
     private static final Map<String,Long> PRICES=LifestealMod.shopPrices();
+    private static final Map<String,Long> SELL_PRICES=new HashMap<>();
+    private static final Set<String> DISABLED_CATEGORIES=new HashSet<>();
+    private static final Set<String> DISABLED_ITEMS=new HashSet<>();
+    private static final Set<String> DISABLED_SHARD_ITEMS=new HashSet<>();
     private static final Map<UUID,Long> SHARDS=LifestealMod.shardBalances();
     private static final Map<String,Long> SHARD_PRICES=new LinkedHashMap<>();
     private record Listing(UUID owner,ItemStack stack,long price) {}
@@ -42,6 +46,16 @@ public final class SmpMenus {
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .executes(c->{customItems(c.getSource().getPlayerOrException());return 1;}));
             dispatcher.register(literal("shop").executes(c->{shop(c.getSource().getPlayerOrException(),false);return 1;}));
+            // Set both prices for the held item's normal-money shop listing.
+            // Restricted to OP; this does not modify shard prices.
+            dispatcher.register(literal("sell").then(literal("price")
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                .then(argument("buy",IntegerArgumentType.integer(0))
+                .then(argument("sell",IntegerArgumentType.integer(0))
+                .executes(ctx -> setHeldItemPrices(ctx.getSource().getPlayerOrException(),
+                    IntegerArgumentType.getInteger(ctx,"buy"),
+                    IntegerArgumentType.getInteger(ctx,"sell")))))));
+
             dispatcher.register(literal("orders").executes(c->{orders(c.getSource().getPlayerOrException(),0);return 1;}));
             dispatcher.register(literal("order").then(literal("create")
                 .then(argument("item",StringArgumentType.word())
@@ -81,6 +95,20 @@ public final class SmpMenus {
     private static Item getItem(String id){
         try{return BuiltInRegistries.ITEM.getValue(Identifier.parse(id));}catch(Exception e){return null;}
     }
+    private static int setHeldItemPrices(ServerPlayer p,long buy,long sell){
+        ItemStack held=p.getMainHandItem();
+        if(held.isEmpty()){message(p,"Hold an item in your main hand first.");return 0;}
+        String id=BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+        PRICES.put(id,buy);
+        SELL_PRICES.put(id,sell);
+        message(p,"Updated "+id+": buy $"+buy+", sell $"+sell+" (until server restart).");
+        return 1;
+    }
+    private static long sellPrice(String id){
+        Long explicit=SELL_PRICES.get(id);
+        return explicit!=null?explicit:Math.max(0L,PRICES.getOrDefault(id,0L)/2);
+    }
+    private static String status(boolean disabled){return disabled?" [DISABLED]":" [ENABLED]";}
     private static long balance(UUID id){return CASH.getOrDefault(id,0L);}
     private static synchronized boolean charge(UUID id,long price){
         if(price<0||balance(id)<price)return false;
@@ -199,7 +227,7 @@ public final class SmpMenus {
             for(ShopCategory cat:categories){
                 if(cat.slot()>=0 && cat.slot()<27 && cat.slot()!=18 && cat.slot()!=19
                      && cat.slot()!=25 && cat.slot()!=26){
-                    icons[cat.slot()]=icon(cat.icon(),cat.title()+" - Click to browse");
+                    icons[cat.slot()]=icon(cat.icon(),cat.title()+status(DISABLED_CATEGORIES.contains(cat.id()))+" - Click to browse");
                     occupied.put(cat.slot(),cat);
                 }
             }
@@ -215,14 +243,14 @@ public final class SmpMenus {
         for(int i=0;i<maxFree && pageStart+i<extras.size();i++){
             int slot=free.get(i);
             ShopCategory cat=extras.get(pageStart+i);
-            icons[slot]=icon(cat.icon(),cat.title()+" - Click to browse");
+            icons[slot]=icon(cat.icon(),cat.title()+status(DISABLED_CATEGORIES.contains(cat.id()))+" - Click to browse");
             occupied.put(slot,cat);
         }
         icons[18]=icon(Items.ARROW,"Previous categories");
         icons[25]=icon(Items.ARROW,"Next categories");
         if(isShopOp(p)){
             icons[26]=icon(Items.COMPARATOR,editing?"Exit Admin Editing":"Admin Settings");
-            if(editing)icons[19]=icon(Items.ANVIL,"Hold a renamed item and click to CREATE a category");
+            if(editing)icons[19]=icon(Items.ANVIL,"Hold renamed item: Add category | Shift-click category: enable/disable");
         }
         final Map<Integer,ShopCategory> displayed=occupied;
         menu(p,editing?"Shop | Admin Categories":"Shop | Menu",icons,(slot,button,type)->{
@@ -249,12 +277,21 @@ public final class SmpMenus {
             }
             ShopCategory chosen=displayed.get(slot);
             if(chosen==null)return;
+            if(editing && isShopOp(p) && type==ContainerInput.QUICK_MOVE){
+                if(!DISABLED_CATEGORIES.add(chosen.id()))DISABLED_CATEGORIES.remove(chosen.id());
+                message(p,chosen.title()+status(DISABLED_CATEGORIES.contains(chosen.id())));
+                shop(p,true,page);return;
+            }
+            if(DISABLED_CATEGORIES.contains(chosen.id())&&!isShopOp(p)){
+                message(p,"This shop category is temporarily disabled.");return;
+            }
             if(chosen.id().equals("shards"))shardShop(p,editing,0);
             else if(chosen.id().equals("spawners"))spawnerShop(p,0);
             else shopItems(p,chosen.id(),editing,0);
         });
     }
     private static void spawnerShop(ServerPlayer p,int page){
+        if(DISABLED_CATEGORIES.contains("spawners")&&!isShopOp(p)){message(p,"Spawners category is disabled.");return;}
         int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
         for(int i=0;i<18 && start+i<SPAWNER_MOBS.size();i++)
             icons[i]=icon(Items.SPAWNER,SPAWNER_MOBS.get(start+i)+" Spawner (NOT YET AVAILABLE)");
@@ -271,20 +308,23 @@ public final class SmpMenus {
         });
     }
     private static void shardShop(ServerPlayer p,boolean edit,int page){
+        if(DISABLED_CATEGORIES.contains("shards")&&!isShopOp(p)){
+            message(p,"Shard Shop is temporarily disabled.");return;
+        }
         if(!isShopOp(p))edit=false;
         final boolean editing=edit;
         List<String> ids=new ArrayList<>(SHARD_PRICES.keySet());
         int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
         for(int i=0;i<18&&start+i<ids.size();i++){
             String id=ids.get(start+i);Item item=getItem(id);
-            if(item!=null)icons[i]=icon(item,id+" | "+SHARD_PRICES.get(id)+" shards");
+            if(item!=null)icons[i]=icon(item,id+" | "+SHARD_PRICES.get(id)+" shards"+status(DISABLED_SHARD_ITEMS.contains(id)));
         }
         icons[18]=icon(Items.ARROW,"Back to Shop");
         icons[19]=icon(Items.PAPER,"Previous Page");
         icons[25]=icon(Items.PAPER,"Next Page");
         icons[22]=icon(Items.DIAMOND,"Shards: "+shardBalance(p.getUUID()));
         if(editing)icons[20]=icon(Items.ANVIL,"Hold an item and click to add it for 100 shards");
-        if(isShopOp(p))icons[26]=icon(Items.COMPARATOR,editing?"Editing: left +10 right -10 shift remove":"Admin Settings");
+        if(isShopOp(p))icons[26]=icon(Items.COMPARATOR,editing?"Edit: left +10, right -10, shift toggle item":"Admin Settings");
         menu(p,"Shard Shop"+(editing?" | Admin":""),icons,(slot,button,type)->{
             if(slot==18){shop(p,editing);return;}
             if(slot==19){shardShop(p,editing,Math.max(0,page-1));return;}
@@ -300,11 +340,14 @@ public final class SmpMenus {
             String id=ids.get(start+slot);Long price=SHARD_PRICES.get(id);
             if(price==null)return;
             if(editing&&isShopOp(p)){
-                if(type==ContainerInput.QUICK_MOVE)SHARD_PRICES.remove(id);
+                if(type==ContainerInput.QUICK_MOVE){
+                    if(!DISABLED_SHARD_ITEMS.add(id))DISABLED_SHARD_ITEMS.remove(id);
+                }
                 else if(button==0)SHARD_PRICES.put(id,Math.min(999999999L,price+10));
                 else SHARD_PRICES.put(id,Math.max(0,price-10));
                 shardShop(p,true,page);return;
             }
+            if(DISABLED_SHARD_ITEMS.contains(id)){message(p,"This shard item is temporarily disabled.");return;}
             if(p.getInventory().getFreeSlot()<0){message(p,"Make room in your inventory.");return;}
             if(!chargeShards(p.getUUID(),price)){message(p,"Not enough shards.");return;}
             Item item=getItem(id);
@@ -315,6 +358,9 @@ public final class SmpMenus {
     }
     private static void shopItems(ServerPlayer p,String categoryId,boolean edit,int page){
         boolean op=isShopOp(p);
+        if(DISABLED_CATEGORIES.contains(categoryId)&&!op){
+            message(p,"This shop category is temporarily disabled.");return;
+        }
         if(!op)edit=false;
         final boolean editing=edit;
         List<String> ids=new ArrayList<>();
@@ -324,14 +370,14 @@ public final class SmpMenus {
         for(int i=0;i<18&&offset+i<ids.size();i++){
             String id=ids.get(offset+i);
             Item item=getItem(id);
-            if(item!=null)icons[i]=icon(item,id+" | Buy $"+PRICES.get(id)+" | Sell $"+PRICES.get(id)/2);
+            if(item!=null)icons[i]=icon(item,id+" | Buy $"+PRICES.get(id)+" | Sell $"+sellPrice(id)+status(DISABLED_ITEMS.contains(id)));
         }
         icons[18]=icon(Items.ARROW,"Back to shop categories");
         icons[19]=icon(Items.PAPER,"Previous page");
         icons[25]=icon(Items.PAPER,"Next page");
         icons[22]=icon(Items.EMERALD,"Balance: $"+balance(p.getUUID()));
         if(editing)icons[20]=icon(Items.ANVIL,"Hold an item and click to add it to this category");
-        if(op)icons[26]=icon(Items.COMPARATOR,editing?"Admin: Left +$100, right -$100, shift-click removes":"Admin Settings");
+        if(op)icons[26]=icon(Items.COMPARATOR,editing?"Admin: left +$100, right -$100, shift toggles item":"Admin Settings");
         menu(p,SHOP_CATEGORIES.get(categoryId).title()+(editing?" | Edit":" | Shop"),icons,(slot,button,type)->{
             if(slot==18){shop(p,editing);return;}
             if(slot==19){shopItems(p,categoryId,editing,Math.max(0,page-1));return;}
@@ -354,13 +400,16 @@ public final class SmpMenus {
             if(item==null)return;
             if(editing&&isShopOp(p)){
                 if(type==ContainerInput.QUICK_MOVE){
-                    PRICES.remove(id);SHOP_CATEGORY_OVERRIDES.remove(id);
+                    if(!DISABLED_ITEMS.add(id))DISABLED_ITEMS.remove(id);
                 }else if(button==0){
                     PRICES.put(id,Math.min(Integer.MAX_VALUE,price+100));
                 }else{
                     PRICES.put(id,Math.max(0,price-100));
                 }
                 shopItems(p,categoryId,true,page);return;
+            }
+            if(DISABLED_ITEMS.contains(id)){
+                message(p,"This item is temporarily disabled.");return;
             }
             if(button==0){
                 if(p.getInventory().getFreeSlot()<0){message(p,"Make room in your inventory.");return;}
@@ -372,7 +421,7 @@ public final class SmpMenus {
                 for(int i=0;i<p.getInventory().getContainerSize();i++){
                     ItemStack stack=p.getInventory().getItem(i);
                     if(!stack.isEmpty()&&stack.is(item)){
-                        try{reward(p.getUUID(),price/2);}
+                        try{reward(p.getUUID(),sellPrice(id));}
                         catch(IllegalArgumentException ex){message(p,"Balance too high.");return;}
                         stack.shrink(1);sold=true;break;
                     }
