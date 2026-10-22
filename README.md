@@ -96,3 +96,7 @@ The money and shard give commands and player payments accept case-insensitive su
 - `k` = 1,000; `m` = 1,000,000; `b` = 1,000,000,000; `t` = 1,000,000,000,000.
 - Examples: `/money give Steve 1b`, `/money give Steve 1.5m`, `/shards give Steve 50k`, `/pay Steve 250k`.
 - Plain whole numbers remain valid. Zero, negative, fractional-unit and overflowed amounts are rejected. Command changes are committed as source and still need to be compiled and tested on Minecraft 26.3.
+
+## Starter category stock (latest)
+
+The normal-money `/shop` categories now contain approximately 70 individually priced starter entries, including combat supplies, enchanting materials, mob drops, all-purpose building materials, farm crops/food, utility and storage blocks, and redstone components. Items appear under explicit categories rather than relying solely on item-name classification. The **diamond icon still opens the separate Shard Shop**; the nine-type Spawner Shop is unchanged. Each item gets a default buy price, with default sell price at half unless an OP overrides it using `/sell price <buy> <sell>`. The new stock is added with `putIfAbsent`, so it does **not overwrite previously configured prices**; existing price-file settings load at server startup and take precedence. OPs can still edit individual prices and temporarily disable entries. As with the other changes, this is committed source code, not a verified successful Minecraft 26.3 build.
