@@ -134,13 +134,10 @@ public final class SmpMenus {
     private static void customItems(ServerPlayer p){
         ItemStack[] icons = new ItemStack[27];
         icons[10] = LifestealMod.heartStack(1);
-        // Mob spawner entries are currently generic spawner items.
-        // Named variants cannot retain their mob type until block entity data support is implemented.
-        String[] mobs = {"Zombie", "Skeleton", "Spider", "Creeper", "Enderman",
-                         "Blaze", "Pig", "Cow", "Sheep", "Chicken", "Iron Golem"};
-        int[] positions = {11,12,13,14,15,16,19,20,21,22,23};
-        for (int i=0;i<mobs.length;i++)
-            icons[positions[i]] = icon(Items.SPAWNER, mobs[i]+" Spawner - click to receive 1");
+        String[] mobs=LifestealSpawners.mobs();
+        int[] positions={11,12,13,14,15,16,19,20,21};
+        for(int i=0;i<mobs.length;i++)
+            icons[positions[i]]=icon(Items.SPAWNER,mobs[i]+" Spawner - click to receive 1");
         icons[26] = icon(Items.BARRIER,"Close");
         menu(p,"Custom Items (OP)",icons,(slot,button,type)->{
             // Re-check OP permission on each click, not only at command registration.
@@ -171,15 +168,6 @@ public final class SmpMenus {
     private static final Map<String,ShopCategory> SHOP_CATEGORIES = new LinkedHashMap<>();
     private static final Map<String,String> SHOP_CATEGORY_OVERRIDES = new HashMap<>();
     // Vanilla spawners need real mob data; until functional implementation, do NOT sell them.
-    private static final List<String> SPAWNER_MOBS = List.of(
-        "Zombie", "Skeleton", "Spider", "Creeper", "Enderman",
-        "Blaze", "Pig", "Cow", "Sheep", "Chicken", "Iron Golem",
-        "Witch", "Slime", "Magma Cube", "Husk", "Stray", "Drowned",
-        "Cave Spider", "Silverfish", "Endermite", "Guardian", "Shulker",
-        "Pillager", "Vindicator", "Evoker", "Wither Skeleton",
-        "Zombified Piglin", "Piglin", "Hoglin", "Zoglin",
-        "Rabbit", "Wolf", "Cat", "Fox", "Frog", "Bee", "Villager"
-    );
     static {
         defineCategory("totems", "Totems & Combat", Items.TOTEM_OF_UNDYING, 12);
         defineCategory("enchants", "Enchantments", Items.ENCHANTED_BOOK, 13);
@@ -337,27 +325,44 @@ public final class SmpMenus {
         });
     }
 
-    /** Right-click a placed managed spawner with an empty hand to open this GUI. */
+    /** Virtual spawner manager: no mobs are spawned. */
     static void openSpawnerManager(ServerPlayer p,net.minecraft.server.level.ServerLevel level,
                                    BlockPos pos,String mob,int count){
+        if(!LifestealSpawners.isManaged(level,pos)){p.closeContainer();return;}
         ItemStack[] icons=new ItemStack[27];
-        icons[4]=icon(Items.SPAWNER,mob+" Spawner x"+count+" (vanilla mob spawning)");
-        icons[10]=icon(Items.CHEST,"Storage (not yet implemented)");
-        icons[12]=icon(Items.EMERALD,"Sell All (not yet implemented)");
-        icons[14]=icon(Items.EXPERIENCE_BOTTLE,"Collect XP (not yet implemented)");
-        icons[16]=icon(Items.ANVIL,"Remove one spawner from stack (if stacked)");
-        icons[22]=icon(Items.PAPER,"Mob: "+mob+" | Stack count: "+count);
+        long stored=LifestealSpawners.stored(level,pos);
+        long xp=LifestealSpawners.xp(level,pos);
+        icons[4]=icon(Items.SPAWNER,mob+" Spawners x"+count+" | Virtual production");
+        icons[10]=icon(Items.CHEST,"Collect drops: "+stored+" "+LifestealSpawners.resource(mob));
+        icons[12]=icon(Items.EMERALD,"Sell ALL "+stored+" drops for $"+(stored*LifestealSpawners.sellValue(mob)));
+        icons[14]=icon(Items.EXPERIENCE_BOTTLE,"Collect XP: "+xp);
+        icons[16]=icon(Items.ANVIL,"Unstack 1 spawner (if more than 1)");
+        icons[22]=icon(LifestealSpawners.resource(mob),"Stored: "+stored+" | XP: "+xp+" | Stack: "+count);
         icons[26]=icon(Items.BARRIER,"Close");
         menu(p,"Spawner | "+mob+" x"+count,icons,(slot,button,type)->{
             if(slot==26){p.closeContainer();return;}
-            if(slot==16){
-                if(LifestealSpawners.removeOne(p,level,pos))
-                    openSpawnerManager(p,level,pos,mob,LifestealSpawners.count(level,pos));
-                else message(p,"Cannot remove a spawner. Need at least two and a free inventory slot.");
-                return;
+            if(!LifestealSpawners.isManaged(level,pos)){
+                message(p,"This spawner no longer exists.");p.closeContainer();return;
             }
-            if(slot==10||slot==12||slot==14)
-                message(p,"Virtual drops/XP are not implemented yet; real mobs spawn naturally.");
+            if(slot==16){
+                if(!LifestealSpawners.removeOne(p,level,pos))
+                    message(p,"Need at least 2 spawners and inventory space.");
+            }else if(slot==10){
+                long collected=LifestealSpawners.collect(p,level,pos);
+                message(p,"Collected "+collected+" items. Uncollected items remain stored.");
+            }else if(slot==12){
+                long total=LifestealSpawners.stored(level,pos);
+                long worth=total*LifestealSpawners.sellValue(mob);
+                if(total>0&&worth<=Long.MAX_VALUE-balance(p.getUUID())){
+                    long earned=LifestealSpawners.sellAll(level,pos);
+                    reward(p.getUUID(),earned);
+                    message(p,"Sold drops for $"+earned);
+                }else message(p,total==0?"Storage is empty.":"Balance limit reached.");
+            }else if(slot==14){
+                int points=LifestealSpawners.collectXp(p,level,pos);
+                message(p,"Collected "+points+" XP.");
+            }
+            openSpawnerManager(p,level,pos,mob,LifestealSpawners.count(level,pos));
         });
     }
     private static void spawnerShop(ServerPlayer p,int page){
@@ -368,7 +373,7 @@ public final class SmpMenus {
         String[] mobs=LifestealSpawners.mobs();
         for(int i=0;i<18 && start+i<mobs.length;i++){
             String mob=mobs[start+i];
-            long price=SPAWNER_PRICES.getOrDefault(mob,25000L);
+            long price=SPAWNER_PRICES.getOrDefault(mob,LifestealSpawners.defaultPrice(mob));
             icons[i]=LifestealSpawners.spawner(mob,1);
             icons[i].set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                 Component.literal(mob+" Spawner | Buy $"+price));
@@ -384,7 +389,7 @@ public final class SmpMenus {
             if(slot==25){if(start+18<mobs.length)spawnerShop(p,page+1);return;}
             if(slot<0||slot>=18||start+slot>=mobs.length)return;
             String mob=mobs[start+slot];
-            long price=SPAWNER_PRICES.getOrDefault(mob,25000L);
+            long price=SPAWNER_PRICES.getOrDefault(mob,LifestealSpawners.defaultPrice(mob));
             if(isShopOp(p)&&type==ContainerInput.QUICK_MOVE){
                 SPAWNER_PRICES.put(mob,button==0?Math.min(Integer.MAX_VALUE,price+1000):
                     Math.max(0,price-1000));
