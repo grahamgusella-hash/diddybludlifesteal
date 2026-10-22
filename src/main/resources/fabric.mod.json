@@ -1,1 +1,19 @@
-{"schemaVersion":1,"id":"lifesteal","version":"${version}","name":"Lifesteal SMP Starter","description":"Prototype for Minecraft 26.3","environment":"*","entrypoints":{"main":["com.example.lifesteal.LifestealMod"]},"depends":{"fabricloader":">=0.19.5","minecraft":"26.3","java":">=25","fabric-api":"*"}}
+{
+  "schemaVersion": 1,
+  "id": "lifesteal",
+  "version": "${version}",
+  "name": "Lifesteal SMP Starter",
+  "description": "Fabric dedicated-server-only Lifesteal SMP prototype; vanilla client GUI and tagged Nether Star Heart",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.example.lifesteal.LifestealMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
