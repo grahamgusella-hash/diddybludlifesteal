@@ -69,27 +69,20 @@ public class LifestealMod implements ModInitializer {
 
     @Override public void onInitialize() {
         SmpMenus.init();
-        Identifier heartId = Identifier.fromNamespaceAndPath(MODID, "heart");
-        HEART = Registry.register(BuiltInRegistries.ITEM, heartId, new Item(new Item.Properties().setId(ResourceKey.create(BuiltInRegistries.ITEM.key(), heartId))) {
-            @Override public InteractionResult use(Level level, Player player, InteractionHand hand) {
-                if (!level.isClientSide() && player instanceof ServerPlayer sp) {
-                    var attribute = sp.getAttribute(Attributes.MAX_HEALTH);
-                    if (attribute == null || attribute.getBaseValue() >= 40) {
-                        sp.sendSystemMessage(Component.literal("You have reached the 20-heart limit."));
-                        return InteractionResult.FAIL;
-                    }
-                    attribute.setBaseValue(attribute.getBaseValue() + 2);
-                    if (!sp.getAbilities().instabuild) sp.getItemInHand(hand).shrink(1);
-                    sp.sendSystemMessage(Component.literal("Redeemed one heart!"));
-                }
-                return InteractionResult.SUCCESS;
-            }
+        // Vanilla Nether Star, identified via persistent vanilla custom_data.
+        // Do NOT register a new item ID: a vanilla client cannot decode that registry.
+        HEART = Items.NETHER_STAR;
+        net.fabricmc.fabric.api.event.player.UseItemCallback.EVENT.register((player, level, hand) -> {
+            if (!(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
+            ItemStack held = player.getItemInHand(hand);
+            if (!isHeart(held)) return InteractionResult.PASS;
+            return redeemHeart(sp, held);
         });
         // The OP-only /customitems chest GUI replaces the Creative inventory tab.
         SHOP.put("minecraft:diamond", 500L);
         SHOP.put("minecraft:netherite_ingot", 5000L);
         SHOP.put("minecraft:golden_apple", 800L);
-        SHOP.put("lifesteal:heart", 10000L);
+        SHOP.put("lifesteal:heart", 10000L); // virtual shop key; granted as tagged Nether Star
 
         ServerLivingEntityEvents.AFTER_DEATH.register((victim, source) -> {
             if (!(victim instanceof ServerPlayer loser) || !(source.getEntity() instanceof ServerPlayer winner)) return;
@@ -107,7 +100,7 @@ public class LifestealMod implements ModInitializer {
                     int amount = IntegerArgumentType.getInteger(ctx, "amount");
                     var health = p.getAttribute(Attributes.MAX_HEALTH);
                     if (health == null || health.getBaseValue() - amount * 2 < 2) return tell(p, "You must keep at least one heart.");
-                    ItemStack stack = new ItemStack(HEART, amount);
+                    ItemStack stack = heartStack(amount);
                     if (p.getInventory().getFreeSlot() < 0) return tell(p, "Make room in your inventory first.");
                     health.setBaseValue(health.getBaseValue() - amount * 2);
                     p.getInventory().add(stack);
@@ -237,6 +230,35 @@ public class LifestealMod implements ModInitializer {
         source.sendSystemMessage(Component.literal("Set " + player.getName().getString()
                 + "'s maximum hearts to " + resulting + "."));
         return 1;
+    }
+
+    /** Vanilla-Nether-Star-based Heart. No custom item registry entry is required. */
+    public static ItemStack heartStack(int amount) {
+        ItemStack stack = new ItemStack(Items.NETHER_STAR, amount);
+        stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("Heart"));
+        net.minecraft.world.item.component.CustomData.update(
+            net.minecraft.core.component.DataComponents.CUSTOM_DATA, stack,
+            tag -> tag.putBoolean("lifesteal_heart", true));
+        return stack;
+    }
+
+    public static boolean isHeart(ItemStack stack) {
+        return !stack.isEmpty() && stack.is(Items.NETHER_STAR)
+            && stack.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA,
+                net.minecraft.world.item.component.CustomData.EMPTY).contains("lifesteal_heart");
+    }
+
+    private static InteractionResult redeemHeart(ServerPlayer p, ItemStack held) {
+        if (p.isSpectator()) return InteractionResult.PASS;
+        var maxHealth = p.getAttribute(Attributes.MAX_HEALTH);
+        if (maxHealth == null || maxHealth.getBaseValue() >= 40) {
+            tell(p, "You have reached the 20-heart maximum.");
+            return InteractionResult.FAIL;
+        }
+        maxHealth.setBaseValue(maxHealth.getBaseValue() + 2);
+        if (!p.getAbilities().instabuild) held.shrink(1);
+        tell(p, "Redeemed one Heart.");
+        return InteractionResult.SUCCESS;
     }
 
     private static int giveCurrency(net.minecraft.commands.CommandSourceStack source, ServerPlayer target,
