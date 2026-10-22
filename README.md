@@ -25,3 +25,11 @@ Deploy a verified regular JAR from build/libs into Fabric's mods folder (not Pap
 - The Custom Items Creative tab is populated only when the client reports operator-item permissions (`hasPermissions`). Its visibility must be checked in-game and may depend on the client's Operator Items setting. This is not an anti-cheat or security boundary.
 
 These changes are pushed to GitHub but **have not been compiled or tested**. Run Gradle build in IntelliJ after pulling; check for 26.3 mapping errors before deployment.
+
+## Server-side Custom Items menu
+
+The separate Creative inventory tab was removed. The OP-only `/customitems` command opens a 27-slot chest-style GUI. OPs can click the Heart entry to obtain a Heart; named mob spawners are shown only as previews and cannot be granted yet because mob-type-specific spawner logic is unfinished. This is untested source code.
+
+**Critical client-compatibility limitation:** The current Heart is still a registered `lifesteal:heart` modded item. A forced server resource pack does NOT register custom item IDs with unmodded Minecraft clients. To support vanilla 26.3 clients, it must be refactored into a vanilla base item (such as a Nether Star) tagged with custom item data and recognized on the server. Until that refactor is implemented and tested, users may still need the Fabric mod client-side. Do not expect a pack alone to fix missing textures or item networking.
+
+FalixNodes supports custom pack ZIP upload under Minecraft > Server Properties > Resource Packs. Its upload interface creates the CDN URL and SHA-1 hash. A server may enforce it with `require-resource-pack=true` once the actual pack has been built and tested.
