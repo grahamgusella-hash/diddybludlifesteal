@@ -36,6 +36,9 @@ public final class SmpMenus {
     private static UUID queue=null;
     public static void init() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registry, env)->{
+            dispatcher.register(literal("customitems")
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                .executes(c->{customItems(c.getSource().getPlayerOrException());return 1;}));
             dispatcher.register(literal("shop").executes(c->{shop(c.getSource().getPlayerOrException(),false);return 1;}));
             dispatcher.register(literal("orders").executes(c->{orders(c.getSource().getPlayerOrException(),0);return 1;}));
             dispatcher.register(literal("order").then(literal("create")
@@ -85,6 +88,40 @@ public final class SmpMenus {
         if(amount<0||amount>Long.MAX_VALUE-balance(id))throw new IllegalArgumentException("Balance overflow");
         CASH.put(id,balance(id)+amount);
     }
+    /** OP-only server-side menu; ordinary clients see a vanilla chest inventory. */
+    private static void customItems(ServerPlayer p){
+        ItemStack[] icons = new ItemStack[27];
+        icons[10] = icon(LifestealMod.HEART, "Heart — click to receive 1");
+        // Mob spawner entries are currently generic spawner items.
+        // Named variants cannot retain their mob type until block entity data support is implemented.
+        String[] mobs = {"Zombie", "Skeleton", "Spider", "Creeper", "Enderman",
+                         "Blaze", "Pig", "Cow", "Sheep", "Chicken", "Iron Golem"};
+        int[] positions = {11,12,13,14,15,16,19,20,21,22,23};
+        for (int i=0;i<mobs.length;i++)
+            icons[positions[i]] = icon(Items.SPAWNER, mobs[i]+" Spawner (placeholder)");
+        icons[26] = icon(Items.BARRIER,"Close");
+        menu(p,"Custom Items (OP)",icons,(slot,button,type)->{
+            // Re-check OP permission on each click, not only at command registration.
+            if (!Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(p.createCommandSourceStack())) {
+                p.closeContainer();
+                return;
+            }
+            if (slot==26){p.closeContainer();return;}
+            if (p.getInventory().getFreeSlot()<0) {
+                message(p,"Make room in your inventory first.");return;
+            }
+            if (slot==10) {
+                p.getInventory().add(new ItemStack(LifestealMod.HEART));
+                message(p,"Received one Heart.");
+                return;
+            }
+            for(int position:positions) if(slot==position) {
+                message(p,"Mob-specific spawners are not implemented yet; no item given.");
+                return;
+            }
+        });
+    }
+
     private static void shop(ServerPlayer p,boolean edit){
         ItemStack[] icons=new ItemStack[27];
         List<String> ids=new ArrayList<>(PRICES.keySet());
