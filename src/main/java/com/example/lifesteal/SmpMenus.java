@@ -28,6 +28,8 @@ public final class SmpMenus {
     private SmpMenus() {}
     private static final Map<UUID,Long> CASH=LifestealMod.economy();
     private static final Map<String,Long> PRICES=LifestealMod.shopPrices();
+    private static final Map<UUID,Long> SHARDS=LifestealMod.shardBalances();
+    private static final Map<String,Long> SHARD_PRICES=new LinkedHashMap<>();
     private record Listing(UUID owner,ItemStack stack,long price) {}
     private record Order(UUID owner,String itemId,int count,long unitPrice) {}
     private static final Map<Integer,Listing> AUCTIONS=new LinkedHashMap<>();
@@ -122,24 +124,41 @@ public final class SmpMenus {
         });
     }
 
-    // Main shop categories follow the positions in the supplied Donut SMP screenshot.
+    // Original Donut SMP-style reference positions, with a separate Spawners entry.
+    // Eight original positions: 12,13,14,20,21,22,23,24. Diamond = SHARD SHOP.
     private record ShopCategory(String id, String title, Item icon, int slot) {}
-    private static final List<ShopCategory> SHOP_CATEGORIES = List.of(
-        new ShopCategory("totems", "Totems & Combat", Items.TOTEM_OF_UNDYING, 12),
-        new ShopCategory("enchants", "Enchantments", Items.ENCHANTED_BOOK, 13),
-        new ShopCategory("ores", "Ores & Valuables", Items.DIAMOND, 14),
-        new ShopCategory("drops", "Mob Drops", Items.BLAZE_POWDER, 20),
-        new ShopCategory("wood", "Wood & Blocks", Items.OAK_LOG, 21),
-        new ShopCategory("farming", "Farming & Food", Items.CARROT, 22),
-        new ShopCategory("storage", "Storage & Utility", Items.CHEST, 23),
-        new ShopCategory("redstone", "Redstone", Items.REDSTONE, 24)
-    );
-    // Category choices made using the OP editor are temporary until server persistence is added.
+    private static final Map<String,ShopCategory> SHOP_CATEGORIES = new LinkedHashMap<>();
     private static final Map<String,String> SHOP_CATEGORY_OVERRIDES = new HashMap<>();
-
+    // Vanilla spawners need real mob data; until functional implementation, do NOT sell them.
+    private static final List<String> SPAWNER_MOBS = List.of(
+        "Zombie", "Skeleton", "Spider", "Creeper", "Enderman",
+        "Blaze", "Pig", "Cow", "Sheep", "Chicken", "Iron Golem",
+        "Witch", "Slime", "Magma Cube", "Husk", "Stray", "Drowned",
+        "Cave Spider", "Silverfish", "Endermite", "Guardian", "Shulker",
+        "Pillager", "Vindicator", "Evoker", "Wither Skeleton",
+        "Zombified Piglin", "Piglin", "Hoglin", "Zoglin",
+        "Rabbit", "Wolf", "Cat", "Fox", "Frog", "Bee", "Villager"
+    );
+    static {
+        defineCategory("totems", "Totems & Combat", Items.TOTEM_OF_UNDYING, 12);
+        defineCategory("enchants", "Enchantments", Items.ENCHANTED_BOOK, 13);
+        defineCategory("shards", "Shard Shop", Items.DIAMOND, 14);
+        defineCategory("drops", "Mob Drops", Items.BLAZE_POWDER, 20);
+        defineCategory("wood", "Wood & Blocks", Items.OAK_LOG, 21);
+        defineCategory("farming", "Farming & Food", Items.CARROT, 22);
+        defineCategory("storage", "Storage & Utility", Items.CHEST, 23);
+        defineCategory("redstone", "Redstone", Items.REDSTONE, 24);
+        defineCategory("spawners", "Spawners", Items.SPAWNER, 11);
+        SHARD_PRICES.put("minecraft:diamond", 50L);
+        SHARD_PRICES.put("minecraft:netherite_ingot", 250L);
+        SHARD_PRICES.put("lifesteal:heart", 500L);
+    }
+    private static void defineCategory(String id,String title,Item icon,int slot) {
+        SHOP_CATEGORIES.put(id,new ShopCategory(id,title,icon,slot));
+    }
     private static String categoryOf(String id){
         String assigned=SHOP_CATEGORY_OVERRIDES.get(id);
-        if(assigned!=null)return assigned;
+        if(assigned!=null && SHOP_CATEGORIES.containsKey(assigned))return assigned;
         String s=id.toLowerCase(Locale.ROOT);
         if(s.contains("heart")||s.contains("totem")||s.contains("sword")||
            s.contains("shield")||s.contains("armor")||s.contains("golden_apple"))return "totems";
@@ -147,7 +166,7 @@ public final class SmpMenus {
            s.contains("experience"))return "enchants";
         if(s.contains("diamond")||s.contains("netherite")||s.contains("emerald")||
            s.contains("iron")||s.contains("gold")||s.contains("ore")||
-           s.contains("lapis")||s.contains("copper"))return "ores";
+           s.contains("lapis")||s.contains("copper"))return "storage";
         if(s.contains("blaze")||s.contains("bone")||s.contains("gunpowder")||
            s.contains("string")||s.contains("rotten")||s.contains("ender_pearl")||
            s.contains("slime")||s.contains("ghast"))return "drops";
@@ -161,27 +180,137 @@ public final class SmpMenus {
            s.contains("observer")||s.contains("comparator")||s.contains("hopper"))return "redstone";
         return "storage";
     }
-    private static ShopCategory shopCategory(String id){
-        for(ShopCategory category:SHOP_CATEGORIES)if(category.id().equals(id))return category;
-        return SHOP_CATEGORIES.get(0);
-    }
     private static boolean isShopOp(ServerPlayer p){
         return Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(p.createCommandSourceStack());
     }
-    private static void shop(ServerPlayer p,boolean edit){
-        boolean op=isShopOp(p);
-        if(!op)edit=false;
+    private static long shardBalance(UUID id){return SHARDS.getOrDefault(id,0L);}
+    private static boolean chargeShards(UUID id,long price){
+        if(price<0||shardBalance(id)<price)return false;
+        SHARDS.put(id,shardBalance(id)-price);return true;
+    }
+    private static void shop(ServerPlayer p,boolean edit){shop(p,edit,0);}
+    private static void shop(ServerPlayer p,boolean edit,int page){
+        if(!isShopOp(p))edit=false;
         final boolean editing=edit;
         ItemStack[] icons=new ItemStack[27];
-        for(ShopCategory category:SHOP_CATEGORIES)
-            icons[category.slot()]=icon(category.icon(),category.title()+" - Click to browse");
-        if(op)icons[26]=icon(Items.COMPARATOR,editing?"Admin editing ON - Click to exit":"Admin Settings - Click to edit");
-        menu(p,editing?"Shop | Admin Menu":"Shop | Menu",icons,(slot,button,type)->{
-            if(slot==26&&isShopOp(p)){shop(p,!editing);return;}
-            for(ShopCategory category:SHOP_CATEGORIES)
-                if(slot==category.slot()){
-                    shopItems(p,category.id(),editing,0);return;
+        List<ShopCategory> categories=new ArrayList<>(SHOP_CATEGORIES.values());
+        Map<Integer,ShopCategory> occupied=new HashMap<>();
+        if(page==0){
+            for(ShopCategory cat:categories){
+                if(cat.slot()>=0 && cat.slot()<27 && cat.slot()!=18 && cat.slot()!=19
+                     && cat.slot()!=25 && cat.slot()!=26){
+                    icons[cat.slot()]=icon(cat.icon(),cat.title()+" - Click to browse");
+                    occupied.put(cat.slot(),cat);
                 }
+            }
+        }
+        // Additional categories appear in the unused inventory slots on page 1,
+        // or on a further page when there are too many to fit.
+        List<ShopCategory> extras=categories.stream().filter(x->x.slot()<0).toList();
+        List<Integer> free=new ArrayList<>();
+        for(int slot=0;slot<18;slot++)if(!occupied.containsKey(slot))free.add(slot);
+        if(page>0){free.clear();for(int i=0;i<18;i++)free.add(i);}
+        int pageStart=page==0?0:14+(page-1)*18;
+        int maxFree=page==0?14:18;
+        for(int i=0;i<maxFree && pageStart+i<extras.size();i++){
+            int slot=free.get(i);
+            ShopCategory cat=extras.get(pageStart+i);
+            icons[slot]=icon(cat.icon(),cat.title()+" - Click to browse");
+            occupied.put(slot,cat);
+        }
+        icons[18]=icon(Items.ARROW,"Previous categories");
+        icons[25]=icon(Items.ARROW,"Next categories");
+        if(isShopOp(p)){
+            icons[26]=icon(Items.COMPARATOR,editing?"Exit Admin Editing":"Admin Settings");
+            if(editing)icons[19]=icon(Items.ANVIL,"Hold a renamed item and click to CREATE a category");
+        }
+        final Map<Integer,ShopCategory> displayed=occupied;
+        menu(p,editing?"Shop | Admin Categories":"Shop | Menu",icons,(slot,button,type)->{
+            if(slot==26 && isShopOp(p)){shop(p,!editing,page);return;}
+            if(slot==18){shop(p,editing,Math.max(0,page-1));return;}
+            if(slot==25){if(page==0 ? extras.size()>14 : extras.size()>14+page*18)
+                shop(p,editing,page+1);return;}
+            if(slot==19 && editing && isShopOp(p)){
+                ItemStack held=p.getMainHandItem();
+                Component label=held.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME);
+                if(held.isEmpty()||label==null){
+                    message(p,"Rename an item with an anvil, hold it, then click Add Category.");return;
+                }
+                String title=label.getString().trim();
+                if(title.isEmpty()||title.length()>32){message(p,"Category name must be 1-32 characters.");return;}
+                String id="custom_"+Integer.toUnsignedString(title.toLowerCase(Locale.ROOT).hashCode(),36);
+                if(SHOP_CATEGORIES.containsKey(id)){
+                    message(p,"That category already exists.");return;
+                }
+                if(SHOP_CATEGORIES.size()>=70){message(p,"Maximum 70 categories.");return;}
+                defineCategory(id,title,held.getItem(),-1);
+                message(p,"Created category: "+title+". Use the category page arrows to find it.");
+                shop(p,true,page);return;
+            }
+            ShopCategory chosen=displayed.get(slot);
+            if(chosen==null)return;
+            if(chosen.id().equals("shards"))shardShop(p,editing,0);
+            else if(chosen.id().equals("spawners"))spawnerShop(p,0);
+            else shopItems(p,chosen.id(),editing,0);
+        });
+    }
+    private static void spawnerShop(ServerPlayer p,int page){
+        int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
+        for(int i=0;i<18 && start+i<SPAWNER_MOBS.size();i++)
+            icons[i]=icon(Items.SPAWNER,SPAWNER_MOBS.get(start+i)+" Spawner (NOT YET AVAILABLE)");
+        icons[18]=icon(Items.ARROW,"Back to categories");
+        icons[19]=icon(Items.PAPER,"Previous page");
+        icons[25]=icon(Items.PAPER,"Next page");
+        icons[22]=icon(Items.BARRIER,"Spawner purchases disabled until mob type is preserved");
+        menu(p,"Spawner Shop (Preview)",icons,(slot,button,type)->{
+            if(slot==18){shop(p,false);return;}
+            if(slot==19){spawnerShop(p,Math.max(0,page-1));return;}
+            if(slot==25){if(start+18<SPAWNER_MOBS.size())spawnerShop(p,page+1);return;}
+            if(slot>=0&&slot<18&&start+slot<SPAWNER_MOBS.size())
+                message(p,"This spawner is preview-only. Mob-specific spawners are not yet implemented.");
+        });
+    }
+    private static void shardShop(ServerPlayer p,boolean edit,int page){
+        if(!isShopOp(p))edit=false;
+        final boolean editing=edit;
+        List<String> ids=new ArrayList<>(SHARD_PRICES.keySet());
+        int start=Math.max(0,page)*18;ItemStack[] icons=new ItemStack[27];
+        for(int i=0;i<18&&start+i<ids.size();i++){
+            String id=ids.get(start+i);Item item=getItem(id);
+            if(item!=null)icons[i]=icon(item,id+" | "+SHARD_PRICES.get(id)+" shards");
+        }
+        icons[18]=icon(Items.ARROW,"Back to Shop");
+        icons[19]=icon(Items.PAPER,"Previous Page");
+        icons[25]=icon(Items.PAPER,"Next Page");
+        icons[22]=icon(Items.DIAMOND,"Shards: "+shardBalance(p.getUUID()));
+        if(editing)icons[20]=icon(Items.ANVIL,"Hold an item and click to add it for 100 shards");
+        if(isShopOp(p))icons[26]=icon(Items.COMPARATOR,editing?"Editing: left +10 right -10 shift remove":"Admin Settings");
+        menu(p,"Shard Shop"+(editing?" | Admin":""),icons,(slot,button,type)->{
+            if(slot==18){shop(p,editing);return;}
+            if(slot==19){shardShop(p,editing,Math.max(0,page-1));return;}
+            if(slot==25){if(start+18<ids.size())shardShop(p,editing,page+1);return;}
+            if(slot==26&&isShopOp(p)){shardShop(p,!editing,page);return;}
+            if(slot==20&&editing&&isShopOp(p)){
+                ItemStack held=p.getMainHandItem();
+                if(held.isEmpty()){message(p,"Hold an item to add it.");return;}
+                SHARD_PRICES.putIfAbsent(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(),100L);
+                shardShop(p,true,0);return;
+            }
+            if(slot<0||slot>=18||start+slot>=ids.size())return;
+            String id=ids.get(start+slot);Long price=SHARD_PRICES.get(id);
+            if(price==null)return;
+            if(editing&&isShopOp(p)){
+                if(type==ContainerInput.QUICK_MOVE)SHARD_PRICES.remove(id);
+                else if(button==0)SHARD_PRICES.put(id,Math.min(999999999L,price+10));
+                else SHARD_PRICES.put(id,Math.max(0,price-10));
+                shardShop(p,true,page);return;
+            }
+            if(p.getInventory().getFreeSlot()<0){message(p,"Make room in your inventory.");return;}
+            if(!chargeShards(p.getUUID(),price)){message(p,"Not enough shards.");return;}
+            Item item=getItem(id);
+            if(item==null){SHARDS.merge(p.getUUID(),price,Long::sum);message(p,"Item unavailable.");return;}
+            p.getInventory().add(new ItemStack(item));
+            shardShop(p,false,page);
         });
     }
     private static void shopItems(ServerPlayer p,String categoryId,boolean edit,int page){
@@ -203,7 +332,7 @@ public final class SmpMenus {
         icons[22]=icon(Items.EMERALD,"Balance: $"+balance(p.getUUID()));
         if(editing)icons[20]=icon(Items.ANVIL,"Hold an item and click to add it to this category");
         if(op)icons[26]=icon(Items.COMPARATOR,editing?"Admin: Left +$100, right -$100, shift-click removes":"Admin Settings");
-        menu(p,shopCategory(categoryId).title()+(editing?" | Edit":" | Shop"),icons,(slot,button,type)->{
+        menu(p,SHOP_CATEGORIES.get(categoryId).title()+(editing?" | Edit":" | Shop"),icons,(slot,button,type)->{
             if(slot==18){shop(p,editing);return;}
             if(slot==19){shopItems(p,categoryId,editing,Math.max(0,page-1));return;}
             if(slot==25){if(offset+18<ids.size())shopItems(p,categoryId,editing,page+1);return;}
