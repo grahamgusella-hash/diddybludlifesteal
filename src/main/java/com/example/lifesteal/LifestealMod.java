@@ -122,6 +122,7 @@ public class LifestealMod implements ModInitializer {
         SHOP.put("minecraft:netherite_ingot", 5000L);
         SHOP.put("minecraft:golden_apple", 800L);
         SHOP.put("lifesteal:heart", 10000L); // virtual shop key; granted as tagged Nether Star
+        SmpMenus.seedDefaultShopStock();
 
         ServerLivingEntityEvents.AFTER_DEATH.register((victim, source) -> {
             if (!(victim instanceof ServerPlayer loser) || !(source.getEntity() instanceof ServerPlayer winner)) return;
