@@ -85,3 +85,7 @@ Regular players type **`/sell`** to open a 27-slot vanilla chest menu. Place the
 OPs still use **`/sell price <buy> <sell>`** while holding an item to set **both** shop prices. For example `/sell price 500 250`. Both prices, plus changes to Shard Shop and Spawner Shop item prices in their admin menus, are now written to the world-specific **`lifesteal-shop-prices.properties`** file and reloaded on every server start. `/lifestealadmin setprice` also saves. Do not delete that file if you want the configuration to survive. This saves **prices**, not cash/shard balances or custom shop categories: those other aspects still have separate incomplete persistence.
 
 **Compatibility:** The updated `/sell` GUI and persistence changes are source-only changes, not a compiled/tested 26.3 JAR. Test deposits, closing with unsold items, restart persistence, and overflow inventory handling in a disposable world before using them with valuable items.
+
+## Configurable max hearts (latest)
+
+The previous **20-heart limit** has been replaced by a **100-heart default maximum**. OP command `/hearts max <amount>` accepts 1–500 hearts, writes the configured limit to `lifesteal-heart-limit.properties` inside the world directory and survives server restarts. `/hearts max` displays the current limit. PvP transfer, Heart redemption, and admin heart limits use this setting; `/withdraw` accepts up to 64 hearts per command. This update is not yet compiled or in-game tested; a new server JAR must be built and deployed before its messages change.
