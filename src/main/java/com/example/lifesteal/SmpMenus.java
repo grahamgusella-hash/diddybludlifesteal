@@ -108,21 +108,98 @@ public final class SmpMenus {
             }
         },Component.literal(title)));
     }
+    private static final Map<String,Integer> ENCHANT_LEVELS=new LinkedHashMap<>();
+    static {
+        ENCHANT_LEVELS.put("protection",4);
+        ENCHANT_LEVELS.put("fire_protection",4);
+        ENCHANT_LEVELS.put("feather_falling",4);
+        ENCHANT_LEVELS.put("blast_protection",4);
+        ENCHANT_LEVELS.put("projectile_protection",4);
+        ENCHANT_LEVELS.put("respiration",3);
+        ENCHANT_LEVELS.put("aqua_affinity",1);
+        ENCHANT_LEVELS.put("thorns",3);
+        ENCHANT_LEVELS.put("depth_strider",3);
+        ENCHANT_LEVELS.put("frost_walker",2);
+        ENCHANT_LEVELS.put("binding_curse",1);
+        ENCHANT_LEVELS.put("soul_speed",3);
+        ENCHANT_LEVELS.put("swift_sneak",3);
+        ENCHANT_LEVELS.put("sharpness",5);
+        ENCHANT_LEVELS.put("smite",5);
+        ENCHANT_LEVELS.put("bane_of_arthropods",5);
+        ENCHANT_LEVELS.put("knockback",2);
+        ENCHANT_LEVELS.put("fire_aspect",2);
+        ENCHANT_LEVELS.put("looting",3);
+        ENCHANT_LEVELS.put("sweeping_edge",3);
+        ENCHANT_LEVELS.put("efficiency",5);
+        ENCHANT_LEVELS.put("silk_touch",1);
+        ENCHANT_LEVELS.put("unbreaking",3);
+        ENCHANT_LEVELS.put("fortune",3);
+        ENCHANT_LEVELS.put("power",5);
+        ENCHANT_LEVELS.put("punch",2);
+        ENCHANT_LEVELS.put("flame",1);
+        ENCHANT_LEVELS.put("infinity",1);
+        ENCHANT_LEVELS.put("luck_of_the_sea",3);
+        ENCHANT_LEVELS.put("lure",3);
+        ENCHANT_LEVELS.put("loyalty",3);
+        ENCHANT_LEVELS.put("impaling",5);
+        ENCHANT_LEVELS.put("riptide",3);
+        ENCHANT_LEVELS.put("channeling",1);
+        ENCHANT_LEVELS.put("multishot",1);
+        ENCHANT_LEVELS.put("quick_charge",3);
+        ENCHANT_LEVELS.put("piercing",4);
+        ENCHANT_LEVELS.put("density",5);
+        ENCHANT_LEVELS.put("breach",4);
+        ENCHANT_LEVELS.put("wind_burst",3);
+        ENCHANT_LEVELS.put("lunge",3);
+        ENCHANT_LEVELS.put("mending",1);
+        ENCHANT_LEVELS.put("vanishing_curse",1);
+    }
+    private static ItemStack enchantBook(ServerPlayer p,String id){
+        Integer level=ENCHANT_LEVELS.get(id.substring(8));
+        if(level==null)return ItemStack.EMPTY;
+        try {
+            var key=net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.ENCHANTMENT,
+                Identifier.fromNamespaceAndPath("minecraft",id.substring(8)));
+            var holder=p.registryAccess()
+                .lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .get(key).orElse(null);
+            if(holder==null)return ItemStack.EMPTY;
+            return net.minecraft.world.item.enchantment.EnchantmentHelper.createBook(
+                new net.minecraft.world.item.enchantment.EnchantmentInstance(holder,level));
+        }catch(Exception ex){return ItemStack.EMPTY;}
+    }
+    private static String enchantedBookId(ItemStack stack){
+        if(!stack.is(Items.ENCHANTED_BOOK))return null;
+        var stored=stack.getOrDefault(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS,
+            net.minecraft.world.item.enchantment.ItemEnchantments.EMPTY);
+        if(stored.size()!=1)return null;
+        for(var holder:stored.keySet()){
+            String name=holder.unwrapKey().map(k->k.identifier().getPath()).orElse("");
+            Integer expected=ENCHANT_LEVELS.get(name);
+            if(expected!=null && stored.getLevel(holder)==expected)return "enchant:"+name;
+        }
+        return null;
+    }
     private static Item getItem(String id){
         if("lifesteal:heart".equals(id)) return Items.NETHER_STAR;
+        if(id.startsWith("enchant:"))return Items.ENCHANTED_BOOK;
         try{return BuiltInRegistries.ITEM.getValue(Identifier.parse(id));}catch(Exception e){return null;}
     }
-    private static ItemStack shopItemStack(String id){
+    private static ItemStack shopItemStack(String id,ServerPlayer p){
+        if(id.startsWith("enchant:"))return enchantBook(p,id);
         return "lifesteal:heart".equals(id) ? LifestealMod.heartStack(1) : new ItemStack(getItem(id));
     }
     private static boolean matchesShopItem(String id,ItemStack stack){
+        if(id.startsWith("enchant:"))return id.equals(enchantedBookId(stack));
         return "lifesteal:heart".equals(id) ? LifestealMod.isHeart(stack) :
             !LifestealMod.isHeart(stack) && stack.is(getItem(id));
     }
     private static int setHeldItemPrices(ServerPlayer p,long buy,long sell){
         ItemStack held=p.getMainHandItem();
         if(held.isEmpty()){message(p,"Hold an item in your main hand first.");return 0;}
-        String id=LifestealMod.isHeart(held) ? "lifesteal:heart" : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+        String id=LifestealMod.isHeart(held) ? "lifesteal:heart" :
+            enchantedBookId(held)!=null ? enchantedBookId(held) : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
         PRICES.put(id,buy);
         SELL_PRICES.put(id,sell);
         saveShopSettings();
@@ -189,6 +266,7 @@ public final class SmpMenus {
         if(stack.isEmpty())return null;
         if(LifestealSpawners.mobFromItem(stack)!=null)return null; // no tagged-spawner exploits
         if(LifestealMod.isHeart(stack))return "lifesteal:heart";
+        if(stack.is(Items.ENCHANTED_BOOK))return enchantedBookId(stack);
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
     private static void sellGui(ServerPlayer p){
@@ -362,6 +440,49 @@ public final class SmpMenus {
         addStock("enchants","minecraft:enchanting_table",12000L,2200L);
         addStock("enchants","minecraft:anvil",2800L,500L);
         addStock("enchants","minecraft:grindstone",600L,100L);
+        addStock("enchants","enchant:protection",18000L,2200L);
+        addStock("enchants","enchant:fire_protection",12000L,1600L);
+        addStock("enchants","enchant:feather_falling",13000L,1800L);
+        addStock("enchants","enchant:blast_protection",11000L,1400L);
+        addStock("enchants","enchant:projectile_protection",11000L,1400L);
+        addStock("enchants","enchant:respiration",10000L,1300L);
+        addStock("enchants","enchant:aqua_affinity",6000L,750L);
+        addStock("enchants","enchant:thorns",17000L,2200L);
+        addStock("enchants","enchant:depth_strider",11000L,1500L);
+        addStock("enchants","enchant:frost_walker",18000L,2200L);
+        addStock("enchants","enchant:binding_curse",1000L,100L);
+        addStock("enchants","enchant:soul_speed",28000L,3200L);
+        addStock("enchants","enchant:swift_sneak",50000L,6500L);
+        addStock("enchants","enchant:sharpness",28000L,3800L);
+        addStock("enchants","enchant:smite",16000L,1900L);
+        addStock("enchants","enchant:bane_of_arthropods",9000L,1000L);
+        addStock("enchants","enchant:knockback",9500L,1200L);
+        addStock("enchants","enchant:fire_aspect",14500L,1800L);
+        addStock("enchants","enchant:looting",35000L,4200L);
+        addStock("enchants","enchant:sweeping_edge",15000L,1800L);
+        addStock("enchants","enchant:efficiency",30000L,3900L);
+        addStock("enchants","enchant:silk_touch",24000L,3300L);
+        addStock("enchants","enchant:unbreaking",29000L,4000L);
+        addStock("enchants","enchant:fortune",47000L,6000L);
+        addStock("enchants","enchant:power",22000L,2800L);
+        addStock("enchants","enchant:punch",11000L,1400L);
+        addStock("enchants","enchant:flame",14000L,1800L);
+        addStock("enchants","enchant:infinity",28000L,3600L);
+        addStock("enchants","enchant:luck_of_the_sea",13500L,1700L);
+        addStock("enchants","enchant:lure",12000L,1400L);
+        addStock("enchants","enchant:loyalty",14000L,1900L);
+        addStock("enchants","enchant:impaling",11000L,1200L);
+        addStock("enchants","enchant:riptide",23000L,2800L);
+        addStock("enchants","enchant:channeling",28000L,3100L);
+        addStock("enchants","enchant:multishot",19000L,2000L);
+        addStock("enchants","enchant:quick_charge",18000L,2000L);
+        addStock("enchants","enchant:piercing",16000L,1750L);
+        addStock("enchants","enchant:density",39000L,5000L);
+        addStock("enchants","enchant:breach",46000L,6000L);
+        addStock("enchants","enchant:wind_burst",90000L,12000L);
+        addStock("enchants","enchant:lunge",50000L,6000L);
+        addStock("enchants","enchant:mending",65000L,8500L);
+        addStock("enchants","enchant:vanishing_curse",1000L,100L);
         addStock("drops","minecraft:blaze_rod",450L,18L);
         addStock("drops","minecraft:bone",75L,6L);
         addStock("drops","minecraft:rotten_flesh",35L,4L);
@@ -652,7 +773,7 @@ public final class SmpMenus {
         for(int i=0;i<18&&start+i<ids.size();i++){
             String id=ids.get(start+i);Item item=getItem(id);
             if(item!=null){
-                icons[i]=shopItemStack(id);
+                icons[i]=shopItemStack(id,p);
                 icons[i].set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                     Component.literal(id+" | "+SHARD_PRICES.get(id)+" shards"+status(DISABLED_SHARD_ITEMS.contains(id))));
             }
@@ -692,7 +813,7 @@ public final class SmpMenus {
             if(!chargeShards(p.getUUID(),price)){message(p,"Not enough shards.");return;}
             Item item=getItem(id);
             if(item==null){SHARDS.merge(p.getUUID(),price,Long::sum);message(p,"Item unavailable.");return;}
-            p.getInventory().add(shopItemStack(id));
+            p.getInventory().add(shopItemStack(id,p));
             shardShop(p,false,page);
         });
     }
@@ -711,7 +832,7 @@ public final class SmpMenus {
             String id=ids.get(offset+i);
             Item item=getItem(id);
             if(item!=null){
-                icons[i]=shopItemStack(id);
+                icons[i]=shopItemStack(id,p);
                 icons[i].set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                     Component.literal(id+" | Buy $"+PRICES.get(id)+" | Sell $"+sellPrice(id)+status(DISABLED_ITEMS.contains(id))));
             }
@@ -760,7 +881,7 @@ public final class SmpMenus {
             if(button==0){
                 if(p.getInventory().getFreeSlot()<0){message(p,"Make room in your inventory.");return;}
                 if(!charge(p.getUUID(),price)){message(p,"Not enough money.");return;}
-                p.getInventory().add(shopItemStack(id));
+                p.getInventory().add(shopItemStack(id,p));
                 shopItems(p,categoryId,false,page);
             }else{
                 boolean sold=false;
