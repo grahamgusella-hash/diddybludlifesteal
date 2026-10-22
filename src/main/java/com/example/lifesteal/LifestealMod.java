@@ -89,6 +89,9 @@ public class LifestealMod implements ModInitializer {
                 CreativeModeTab.builder(CreativeModeTab.Row.TOP, 0).icon(() -> new ItemStack(HEART))
                         .title(Component.translatable("itemGroup.lifesteal.custom"))
                         .displayItems((params, output) -> {
+                            // The Creative screen sets hasPermissions for players allowed operator items.
+                            // A tab with no items is hidden by Minecraft itself.
+                            if (!params.hasPermissions()) return;
                             output.accept(HEART);
                             // Visual prototype spawners. Mob type is not retained on placement.
                             for (String mob : List.of("zombie", "skeleton", "spider", "creeper", "enderman",
@@ -129,7 +132,20 @@ public class LifestealMod implements ModInitializer {
             dispatcher.register(literal("hearts").executes(ctx -> {
                 ServerPlayer p = ctx.getSource().getPlayerOrException();
                 return tell(p, "Hearts: " + (int)(p.getAttribute(Attributes.MAX_HEALTH).getBaseValue()/2));
-            }));
+            })
+                // OP-only; a granted heart means one extra maximum-health heart, not an item.
+                .then(literal("give").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .then(argument("player", EntityArgument.player())
+                    .then(argument("amount", IntegerArgumentType.integer(1, 19))
+                    .executes(ctx -> changeHearts(
+                        ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
+                        IntegerArgumentType.getInteger(ctx, "amount"), false)))))
+                .then(literal("set").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .then(argument("player", EntityArgument.player())
+                    .then(argument("amount", IntegerArgumentType.integer(1, 20))
+                    .executes(ctx -> changeHearts(
+                        ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
+                        IntegerArgumentType.getInteger(ctx, "amount"), true))))));
             dispatcher.register(literal("balance").executes(ctx -> balance(ctx.getSource().getPlayerOrException())));
             dispatcher.register(literal("bal").executes(ctx -> balance(ctx.getSource().getPlayerOrException())));
             dispatcher.register(literal("shards").executes(ctx -> {
@@ -212,6 +228,33 @@ public class LifestealMod implements ModInitializer {
                 })))));
         });
     }
+    /** Change player maximum health in heart units (2 health points per heart). */
+    private static int changeHearts(net.minecraft.commands.CommandSourceStack source,
+                                    ServerPlayer player, int hearts, boolean set) {
+        var maxHealth = player.getAttribute(Attributes.MAX_HEALTH);
+        if (maxHealth == null) {
+            source.sendSystemMessage(Component.literal("Unable to change player hearts."));
+            return 0;
+        }
+        int current = (int) Math.round(maxHealth.getBaseValue() / 2.0);
+        int resulting = set ? hearts : current + hearts;
+        if (resulting < 1 || resulting > 20) {
+            source.sendSystemMessage(Component.literal("Heart limit is 1 to 20. "
+                    + player.getName().getString() + " currently has " + current + "."));
+            return 0;
+        }
+        maxHealth.setBaseValue(resulting * 2.0);
+        // When lowering the maximum, avoid leaving health above the new limit.
+        if (player.getHealth() > maxHealth.getBaseValue()) {
+            player.setHealth((float) maxHealth.getBaseValue());
+        }
+        player.sendSystemMessage(Component.literal("Your maximum hearts were "
+                + (set ? "set to " : "increased to ") + resulting + " by an OP."));
+        source.sendSystemMessage(Component.literal("Set " + player.getName().getString()
+                + "'s maximum hearts to " + resulting + "."));
+        return 1;
+    }
+
     private static int giveCurrency(net.minecraft.commands.CommandSourceStack source, ServerPlayer target,
                                     long amount, Map<UUID, Long> currency, String label) {
         long current = currency.getOrDefault(target.getUUID(), 0L);
