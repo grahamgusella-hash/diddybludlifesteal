@@ -179,25 +179,32 @@ public class LifestealMod implements ModInitializer {
                 return tell(p, "Shards: " + SHARDS.getOrDefault(p.getUUID(), 0L));
             }).then(literal("give").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .then(argument("player", EntityArgument.player())
-                .then(argument("amount", LongArgumentType.longArg(1))
-                .executes(ctx -> giveCurrency(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
-                    LongArgumentType.getLong(ctx, "amount"), SHARDS, "shards"))))));
+                .then(argument("amount", StringArgumentType.word())
+                .executes(ctx -> giveCurrencyShort(ctx.getSource(),
+                    EntityArgument.getPlayer(ctx, "player"),
+                    StringArgumentType.getString(ctx, "amount"), SHARDS, "shards"))))));
             dispatcher.register(literal("money")
                 .then(literal("give").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .then(argument("player", EntityArgument.player())
-                .then(argument("amount", LongArgumentType.longArg(1))
-                .executes(ctx -> giveCurrency(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
-                    LongArgumentType.getLong(ctx, "amount"), BALANCE, "money"))))));
-            dispatcher.register(literal("pay").then(argument("player", EntityArgument.player()).then(argument("amount", IntegerArgumentType.integer(1))
+                .then(argument("amount", StringArgumentType.word())
+                .executes(ctx -> giveCurrencyShort(ctx.getSource(),
+                    EntityArgument.getPlayer(ctx, "player"),
+                    StringArgumentType.getString(ctx, "amount"), BALANCE, "money"))))));
+            dispatcher.register(literal("pay").then(argument("player", EntityArgument.player())
+                .then(argument("amount", StringArgumentType.word())
                 .executes(ctx -> {
                     ServerPlayer p = ctx.getSource().getPlayerOrException();
                     ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
-                    long amt = IntegerArgumentType.getInteger(ctx, "amount");
+                    long amt;
+                    try { amt = parseShortAmount(StringArgumentType.getString(ctx, "amount")); }
+                    catch (IllegalArgumentException ex) { return tell(p, ex.getMessage()); }
                     if (p.getUUID().equals(target.getUUID())) return tell(p, "You cannot pay yourself.");
                     long funds = BALANCE.getOrDefault(p.getUUID(), 0L);
                     if (funds < amt) return tell(p, "Not enough money.");
+                    long targetFunds = BALANCE.getOrDefault(target.getUUID(), 0L);
+                    if (amt > Long.MAX_VALUE - targetFunds) return tell(p, "Recipient balance would overflow.");
                     BALANCE.put(p.getUUID(), funds - amt);
-                    BALANCE.merge(target.getUUID(), amt, Long::sum);
+                    BALANCE.put(target.getUUID(), targetFunds + amt);
                     tell(target, "You received $" + amt + " from " + p.getName().getString());
                     return tell(p, "Paid $" + amt + ".");
                 }))));
@@ -309,6 +316,44 @@ public class LifestealMod implements ModInitializer {
         if (!p.getAbilities().instabuild) held.shrink(1);
         tell(p, "Redeemed one Heart.");
         return InteractionResult.SUCCESS;
+    }
+
+    /** Whole-number currency amounts, with optional case-insensitive K/M/B/T suffix.
+     *  Fractional abbreviations such as 1.5m are allowed if they yield a whole unit.
+     */
+    private static long parseShortAmount(String input) {
+        if(input==null || !input.matches("(?i)\\d+(?:\\.\\d+)?[kmbt]?"))
+            throw new IllegalArgumentException("Invalid amount. Use 1000, 1k, 1m, 1b or 1t.");
+        String normalized = input.toLowerCase(java.util.Locale.ROOT);
+        char suffix = normalized.charAt(normalized.length()-1);
+        long multiplier = switch(suffix) {
+            case 'k' -> 1_000L;
+            case 'm' -> 1_000_000L;
+            case 'b' -> 1_000_000_000L;
+            case 't' -> 1_000_000_000_000L;
+            default -> 1L;
+        };
+        String number = multiplier==1L ? normalized : normalized.substring(0,normalized.length()-1);
+        try {
+            long amount = new java.math.BigDecimal(number)
+                .multiply(java.math.BigDecimal.valueOf(multiplier))
+                .longValueExact();
+            if(amount<=0)throw new IllegalArgumentException("Amount must be greater than zero.");
+            return amount;
+        }catch(ArithmeticException | NumberFormatException ex) {
+            throw new IllegalArgumentException("Amount must be a whole number and not exceed the maximum balance.");
+        }
+    }
+    private static int giveCurrencyShort(net.minecraft.commands.CommandSourceStack source,
+                                         ServerPlayer target,String input,
+                                         Map<UUID,Long> currency,String label) {
+        long amount;
+        try { amount = parseShortAmount(input); }
+        catch(IllegalArgumentException ex) {
+            source.sendSystemMessage(Component.literal(ex.getMessage()));
+            return 0;
+        }
+        return giveCurrency(source,target,amount,currency,label);
     }
 
     private static int giveCurrency(net.minecraft.commands.CommandSourceStack source, ServerPlayer target,
