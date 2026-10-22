@@ -44,3 +44,10 @@ The shop now opens a 3-row category menu matching the supplied screenshot's item
 - In `/shop`, an OP clicks Admin Settings, renames a held item in an anvil, then clicks the Anvil **Add Category** button (slot 19). The held item's custom name becomes the category name and the held item becomes its icon. New categories can be browsed using the page arrows; click a category while editing to add items and prices.
 - A new Spawners category displays a paginated catalog of 37 mob types. **Purchases are intentionally disabled**: the mod still lacks reliable mob-specific block-entity data, placement for non-OP players, and mining/dropping with correct mob identity. The labels are previews only, not functional custom spawners.
 - These GUI settings currently exist only in memory and reset when the server restarts. Neither successful compilation nor in-game compatibility has been verified. Do not deploy to a production economy until persistence, transaction safety, and the full spawner mechanics are implemented and tested.
+
+## Temporary shop controls and direct OP price command
+
+- `/shop` -> Admin Settings: **shift-click a category icon** to disable/enable it. Regular players cannot open disabled categories; OPs can open them while editing.
+- In a category's Admin Settings, **shift-click a listing** to temporarily disable/enable that item instead of removing it. This also applies to Shard Shop listings. Disabled items cannot be purchased or sold through the normal-money shop (and cannot be purchased in the Shard Shop).
+- OPs can hold an item in the main hand and run `/sell price <buyPrice> <sellPrice>` to set its regular-money shop purchase and sale price. Example: `/sell price 500 250`. This adds the held item's type to the shop if absent; it does not change shard prices. Both prices can be 0 or higher. Existing listings use the configured sell value instead of automatically halving the buy price.
+- **All these settings are temporary:** toggles and custom sell prices reset when the server restarts. This implementation has not yet been compiled/tested in Minecraft 26.3. Shop and auction persistence and economy safeguards are still pending.
