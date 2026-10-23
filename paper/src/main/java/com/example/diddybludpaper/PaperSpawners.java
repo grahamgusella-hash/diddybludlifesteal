@@ -155,15 +155,20 @@ public final class PaperSpawners implements Listener {
         }
         save();
     }
-    private record ManagerHolder(String location) implements InventoryHolder {
-        @Override public Inventory getInventory(){return null;}
+    private static final class ManagerHolder implements InventoryHolder {
+        final String location;
+        private Inventory inventory;
+        ManagerHolder(String location){this.location=location;}
+        @Override public Inventory getInventory(){return inventory;}
     }
     private void openManager(Player p,Block block){
         Stack s=placed.get(key(block));if(s==null)return;
         if(!s.owner().equals(p.getUniqueId())&&!p.hasPermission("diddyblud.admin")){
             p.sendMessage("§cThis stack belongs to another player.");return;
         }
-        Inventory inv=Bukkit.createInventory(new ManagerHolder(key(block)),27,"Spawner | "+s.mob());
+        ManagerHolder holder=new ManagerHolder(key(block));
+        Inventory inv=Bukkit.createInventory(holder,27,"Spawner | "+s.mob());
+        holder.inventory=inv;
         inv.setItem(4,icon(Material.SPAWNER,s.mob()+" x"+s.count()));
         inv.setItem(10,icon(Material.CHEST,"Collect "+s.stored()+" drops"));
         inv.setItem(12,icon(Material.EMERALD,"Sell drops for $"+Math.min(Long.MAX_VALUE/2,s.stored()*DROP_SELL.get(s.mob()))));
@@ -182,8 +187,8 @@ public final class PaperSpawners implements Listener {
         e.setCancelled(true);
         if(!(e.getWhoClicked() instanceof Player p))return;
         int slot=e.getRawSlot();if(slot>=27||slot<0)return;
-        Block block=locate(h.location());if(block==null)return;
-        Stack s=placed.get(h.location());if(s==null)return;
+        Block block=locate(h.location);if(block==null)return;
+        Stack s=placed.get(h.location);if(s==null)return;
         if(!s.owner().equals(p.getUniqueId())&&!p.hasPermission("diddyblud.admin"))return;
         if(slot==26){p.closeInventory();return;}
         if(slot==10&&s.stored()>0){
@@ -197,18 +202,18 @@ public final class PaperSpawners implements Listener {
                 given+=accepted;remaining-=accepted;
                 if(rejected>0)break;
             }
-            placed.put(h.location(),new Stack(s.mob(),s.count(),s.stored()-given,s.xp(),s.owner()));
+            placed.put(h.location,new Stack(s.mob(),s.count(),s.stored()-given,s.xp(),s.owner()));
         }else if(slot==12&&s.stored()>0){
             long unit=DROP_SELL.get(s.mob()), amount=Math.min(s.stored(),(Long.MAX_VALUE-plugin.funds(p.getUniqueId()))/unit);
             if(amount>0&&plugin.credit(p.getUniqueId(),amount*unit))
-                placed.put(h.location(),new Stack(s.mob(),s.count(),s.stored()-amount,s.xp(),s.owner()));
+                placed.put(h.location,new Stack(s.mob(),s.count(),s.stored()-amount,s.xp(),s.owner()));
         }else if(slot==14&&s.xp()>0){
             int xp=(int)Math.min(s.xp(),100000);
             p.giveExp(xp);
-            placed.put(h.location(),new Stack(s.mob(),s.count(),s.stored(),s.xp()-xp,s.owner()));
+            placed.put(h.location,new Stack(s.mob(),s.count(),s.stored(),s.xp()-xp,s.owner()));
         }else if(slot==16&&s.count()>1){
             Map<Integer,ItemStack> extra=p.getInventory().addItem(spawner(s.mob(),1));
-            if(extra.isEmpty())placed.put(h.location(),new Stack(s.mob(),s.count()-1,s.stored(),s.xp(),s.owner()));
+            if(extra.isEmpty())placed.put(h.location,new Stack(s.mob(),s.count()-1,s.stored(),s.xp(),s.owner()));
             else extra.values().forEach(item->p.getWorld().dropItemNaturally(p.getLocation(),item));
         }
         save();openManager(p,block);
