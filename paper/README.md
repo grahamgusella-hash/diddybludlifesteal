@@ -73,6 +73,7 @@ Both money and shards accept whole numbers or `k`, `m`, `b`, `t` shorthand; sett
 
 Every online player gets a **vanilla Minecraft right-hand sidebar scoreboard** titled `DIDDYBLUD SMP` with:
 
+- **Username** — each player sees their own Minecraft username above the balances.
 - **Money** — current balance, displayed compactly (e.g., `$1.5m`).
 - **Shards** — current shard balance.
 - **Next** — countdown `MM:SS` to the next reward.
