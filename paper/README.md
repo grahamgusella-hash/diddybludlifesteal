@@ -92,3 +92,17 @@ The Paper edition now uses **orange and black stained-glass pane borders, Jack o
 Private vaults have a **Haunted Vault** title, but their 27 inventory slots are deliberately left undecorated so no storage is lost and no decorative items can be saved into player vault data. Decor items are not purchasable or withdrawable. This is a server-side design using ordinary vanilla items with no client resource pack or client mod required.
 
 As with other commits, **compile and test the updated Paper JAR** before deploying to the live server.
+
+## Verifying the actual deployed plugin (0.3.0-paper)
+
+If GitHub commits don't appear in-game, the **running server may still be using an old JAR**. The new, distinctive build version is `0.3.0-paper`. After rebuilding or downloading the GitHub Actions artifact, the regular plugin file should be named `diddybludlifesteal-paper-0.3.0-paper.jar`.
+
+1. Build **from the `paper/` Gradle project**, not the repository's older root Fabric build.
+2. Stop FalixNodes Paper, and remove **all older Diddyblud Paper JARs** from the server's `plugins/` folder (keep backups outside `plugins/`).
+3. Upload **only the new 0.3.0 Paper JAR**, restart, and run `/diddyblud`.
+4. `/diddyblud` must print **Paper 0.3.0-paper**, together with `Heart right-click, Halloween GUIs, scoreboard, and shard rewards`. If it doesn't, the active server is **not running this update**.
+5. As OP, run `/customitems`, click the new Heart (tagged Nether Star) to place it in your inventory, close the menu, and right-click it in **either main hand or offhand**. A successful redemption sends `Heart redeemed!`, adds one maximum heart (and heals that heart), and consumes one Heart in survival mode.
+6. Ordinary Nether Stars and old Fabric Heart stacks without the Paper marker are **not** redeemable; get a fresh Paper Heart for the test.
+7. Try `/shop` and look for Jack o'Lantern corners, orange/black glass, and cobweb accents. Decorations are protected against accidental menu purchases/clicks.
+
+Neither these source changes nor the version bump prove the 26.3 project compiles and runs. **A successful 0.3.0-paper build and in-game version check are both required.**
