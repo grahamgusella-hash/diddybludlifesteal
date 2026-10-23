@@ -68,3 +68,18 @@ Both money and shards accept whole numbers or `k`, `m`, `b`, `t` shorthand; sett
 - When a player kills another player, the victim's death loot receives **one genuine, tagged Lifesteal Heart** (Nether Star), which can be picked up and redeemed by right-clicking. The killer no longer gains the heart automatically. Regular environmental deaths do not create a heart drop.
 - **Unbanning** an eliminated player remains a server operator decision (vanilla `/pardon <player>`). Pardoning alone does not reset the player's stored heart count.
 - These changes are committed to the Paper source, **not yet compiled or tested**. Before using a production world, verify both the ban flow and death-drop persistence on a test player account.
+
+## Right-hand SMP scoreboard & timed shard rewards (latest)
+
+Every online player gets a **vanilla Minecraft right-hand sidebar scoreboard** titled `DIDDYBLUD SMP` with:
+
+- **Money** — current balance, displayed compactly (e.g., `$1.5m`).
+- **Shards** — current shard balance.
+- **Next** — countdown `MM:SS` to the next reward.
+- **Reward** — `+10 Shards`.
+
+Players receive **10 shards for every 30 minutes actively connected to the server**. The countdown pauses while offline; reconnecting resumes the saved remaining time rather than resetting it. Rewards deposit directly into the existing shard balance and are immediately saved. Remaining time is stored in `server-data.yml` under `shard-reward-seconds`, alongside balances, shop, vault and spawn configuration. The timer also saves during periodic saves, quit, and normal shutdown.
+
+The scoreboard is sent using the built-in Bukkit scoreboard API: **no client mod required**. This plugin uses the player's sidebar scoreboard slot, so an additional scoreboard plugin could conflict and overwrite its display.
+
+As with the other Paper code, these changes are committed as source; **building successfully and testing in-game are still required** before a deployment is considered verified.
