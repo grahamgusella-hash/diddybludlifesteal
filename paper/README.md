@@ -1,24 +1,42 @@
-# Diddyblud Lifesteal Paper 26.3 — EARLY MIGRATION
+# Diddyblud Lifesteal — Paper 26.3 Edition
 
-This is a **separate Paper plugin project**, alongside (not replacing) the root Fabric project. Do not upload a Fabric mod into Paper `plugins/`.
+This is the **Paper plugin** rewrite of the old Fabric project. The Paper plugin lives entirely in the `paper/` subfolder; the original Fabric source remains in the repository for reference.
 
-## Status — deliberately limited
+## Included in the Paper source
 
-This first Paper port contains:
-- Paper 26.3 Gradle project and `plugin.yml`, Java 25
-- `/diddyblud` migration/status command
-- **persistent** money balances (`plugins/DiddybludLifesteal/balances.yml`)
-- `/bal`, OP-only `/money give <player> <amount>`, `/pay <player> <amount>`; support for k/m/b/t suffixes
-- `/shop` opens a nine-category **preview** using a vanilla 27-slot chest menu
+- **Lifesteal:** steal one maximum heart on PvP kill; redeem tagged vanilla Nether Star Hearts with right-click; `/withdraw`, `/hearts`, OP `/hearts set`, `/hearts give` and persistent `/hearts max` (default 100, configurable up to 500).
+- **Persistent economy:** `/bal`, `/balance`, `/money give` (OP), `/pay`, `/shards` and OP `/shards give`. All amounts support `k/m/b/t` shortcuts and decimal abbreviations such as `1.5m`.
+- **Shop:** nine category icons, page navigation, buy with left-click, sell one item with right-click. Combat includes armor, mace, crystals and obsidian. Enchantments generate actual enchanted books; the catalog includes standard enchantments at their maximum levels.
+- **Admin shop:** comparator toggles editor, shift-click category to temporarily disable/re-enable, hold a renamed item and press the anvil to add a new category; in category editor shift-click item to toggle, left-click to raise buy price and right-click to raise sell price. All these settings save to the plugin YAML.
+- **Sell chest:** `/sell` opens a deposit GUI with 18 item slots and confirm/cancel. Eligible item payouts use saved prices, remaining items are returned on closing. OP `/sell price <buy> <sell>` changes both prices of the held item, saved across restarts.
+- **Virtual spawners:** exactly Blaze, Spider, Iron Golem, Enderman, Chicken, Zombie, Creeper, Pig, Skeleton. They are vanilla spawner items with a persistent data marker and place a normal-looking spawner block, but **no mobs spawn** from tracked stacks. Loaded chunks produce stored drops and XP every five seconds; stacked generators multiply yield. Empty-hand right-click opens a GUI to collect items, sell all, collect XP, or unstack one; mining the spawner recovers its type and count without Silk Touch. Prices depend on rarity and can be adjusted with admin shift-click in Spawner Shop. Player ownership and explosion protections included. Data saved to `spawners.yml`.
+- **Other commands:** `/sethome`, `/home`, `/delhome`, `/tpa`, `/tpaccept`, `/tpdeny`, `/rtp` near/far GUI, two-player `/rtpq` (and leave), `/pv` and `/vault` (three saved vaults), `/ah` and `/ah sell <price>`, `/orders`, `/order create <item> <count> <eachPrice>`, OP `/customitems`.
 
-**NOT YET PORTED:** full item shop and admin pricing, `/sell` deposit GUI, Lifesteal hearts and withdrawals, shards, auctions, buy orders, spawner stacking and virtual drop generation, homes and teleports, vaults, admin category editing, and historical Fabric saves. Do not run this migration build expecting those features. The Paper implementation is NOT a drop-in equivalent of the Fabric mod; it also does not migrate prior world data automatically.
+All user-facing menus use ordinary vanilla Minecraft chest inventories. **Players should not install a Fabric mod.** The server runs Paper and the Paper plugin only.
 
-## Build
+## Installing / building
 
-1. Open **the `paper/` subfolder itself as a Gradle project** in IntelliJ. The root repository Gradle build still builds Fabric.
-2. Use Java 25 and run `build`.
-3. If the build succeeds, use **`paper/build/libs/diddybludlifesteal-paper-0.1.0-paper.jar`** (or the ordinary non-sources JAR).
-4. Install on a **Paper 26.3** test server, in `plugins/`, then restart. Do not install the old Fabric JAR; remove any conflicting old plugin version.
-5. Test `/diddyblud`, `/bal`, `/money give <player> 1k`, `/pay <player> 100`, and `/shop`.
+### Option A: GitHub Actions (recommended)
 
-This project is source-only and has **not** been compiled or tested here. Make a world backup first. Paper and Fabric server versions need careful world handling; do not delete data without a backup.
+1. Open the repository's **Actions** tab and choose **Build Paper plugin**.
+2. Select **Run workflow**. If it succeeds, open that run and download its **DiddybludLifesteal-Paper-26.3** artifact.
+3. Extract the downloaded artifact ZIP to find the JAR inside.
+4. In FalixNodes, **stop the server** and back up the current world before changing software.
+5. Select **Paper 26.3** in the server version/installer panel.
+6. Remove the old Fabric mod JAR from the active installation. Place the ordinary `diddybludlifesteal-paper-0.2.0-paper.jar` in the **`plugins/`** directory.
+7. Restart and check the console for `Diddyblud Paper enabled`.
+8. Join with ordinary Minecraft Java 26.3, run `/diddyblud`, `/shop`, and `/bal`, then test spawners on a temporary world.
+
+### Option B: IntelliJ
+
+Open **only `paper/` as a separate Gradle project**, configure JDK 25 and build. The root Gradle project still builds **Fabric**, not Paper. The resulting ordinary JAR is in `paper/build/libs/`.
+
+## Important limitations and testing
+
+**Source code has been written and committed, but the Paper port has not been compiled or runtime-tested in this environment.** A successful GitHub Actions build is required before uploading a JAR; runtime testing is still necessary. Do **not** assume the JAR exists or that all features work until checks pass.
+
+- This port uses new YAML files under `plugins/DiddybludLifesteal/`, including `server-data.yml` and `spawners.yml`. The prior Fabric mod's world data **does not migrate automatically**. Preserve all original world and configuration backups.
+- The plugin's spawner collection uses server ticks only in loaded chunks; no offline generation. NPCs and vanilla-world spawners are not automatically converted. Do not place high-value items or unlock a production server without testing inventory workflows and server restarts.
+- Economy balances are stored in a YAML file: very busy public servers should move to a database-backed economy and transaction-safe inventory/escrow layer.
+- Shop prices are starter balancing values; admins can reprice to match the server economy.
+- Server software switching must be done through FalixNodes; updating code on GitHub cannot change a running host or install a plugin remotely.
