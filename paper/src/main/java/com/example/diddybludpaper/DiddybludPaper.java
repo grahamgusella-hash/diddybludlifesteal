@@ -713,14 +713,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Objective objective=board.registerNewObjective("diddyhud","dummy","§c§lDIDDYBLUD §fSMP");
         objective.setDisplaySlot(DisplaySlot.SIDEBAR);
         // Stable, unique score-entry keys prevent visible flicker on updates.
-        String[] entries={"§0","§1","§2","§3","§4","§5","§6"};
-        String[] teams={"top","money","shards","timer","reward","gap","bottom"};
+        String[] entries={"§0","§1","§2","§3","§4","§5","§6","§7"};
+        String[] teams={"top","username","money","shards","timer","reward","gap","bottom"};
         for(int i=0;i<teams.length;i++){
             Team team=board.registerNewTeam(teams[i]);
             team.addEntry(entries[i]);
             objective.getScore(entries[i]).setScore(teams.length-i);
         }
         board.getTeam("top").setPrefix("§8§m----------------");
+        board.getTeam("username").setPrefix("§fPlayer: §b"+player.getName());
         board.getTeam("reward").setPrefix("§7Reward: §d+10 Shards");
         board.getTeam("gap").setPrefix("§r ");
         board.getTeam("bottom").setPrefix("§8§m----------------");
