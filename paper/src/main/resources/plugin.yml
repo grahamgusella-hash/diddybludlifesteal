@@ -1,19 +1,36 @@
 name: DiddybludLifesteal
-version: 0.1.0-paper
+version: 0.2.0-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
-description: Server-side Paper port of Diddyblud Lifesteal (early migration)
+description: Server-side Lifesteal SMP for Paper 26.3
 commands:
-  diddyblud:
-    description: Paper migration status
-  shop:
-    description: Opens the category menu (migration preview)
-  bal:
-    description: Shows your balance
-  money:
-    description: Give money (OP only)
-  pay:
-    description: Pay another player
+  diddyblud: {description: Plugin information}
+  shop: {description: Open shop categories}
+  sell: {description: Open sell deposit GUI, or OP price edit}
+  bal: {description: Check money}
+  balance: {description: Check money}
+  money: {description: Grant money (OP)}
+  pay: {description: Send money}
+  shards: {description: Check or grant shards}
+  hearts: {description: Check or change hearts (OP)}
+  withdraw: {description: Withdraw a heart as an item}
+  customitems: {description: Admin item GUI}
+  ah: {description: Auction house}
+  auction: {description: Auction house}
+  orders: {description: Buy orders GUI}
+  order: {description: Create orders}
+  sethome: {description: Set home}
+  delhome: {description: Delete home}
+  home: {description: Go home}
+  tpa: {description: Teleport request}
+  tpaccept: {description: Accept teleport request}
+  tpdeny: {description: Deny teleport request}
+  pv: {description: Open personal vault}
+  vault: {description: Open personal vault}
+  rtp: {description: Random teleport}
+  rtpq: {description: Random teleport queue}
+  spawner: {description: Spawner info}
 permissions:
   diddyblud.admin:
+    description: Edit shops, money, shards, hearts, and custom items
     default: op
