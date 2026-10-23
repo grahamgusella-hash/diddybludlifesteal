@@ -84,3 +84,11 @@ Players receive **10 shards for every 30 minutes actively connected to the serve
 The scoreboard is sent using the built-in Bukkit scoreboard API: **no client mod required**. This plugin uses the player's sidebar scoreboard slot, so an additional scoreboard plugin could conflict and overwrite its display.
 
 As with the other Paper code, these changes are committed as source; **building successfully and testing in-game are still required** before a deployment is considered verified.
+
+## Halloween inventory GUI decorations
+
+The Paper edition now uses **orange and black stained-glass pane borders, Jack o'Lantern corner icons and cobweb accents** to decorate unused GUI slots in `/shop`, category pages, the shard and spawner stores, `/sell`, `/ah`, `/orders`, the OP custom-items menu, `/rtp` and placed-spawner management. Existing clickable content and control slots take precedence; filler items are never placed over an active button. The sell menu's first **18 deposit slots remain empty**, and controls stay in their original positions.
+
+Private vaults have a **Haunted Vault** title, but their 27 inventory slots are deliberately left undecorated so no storage is lost and no decorative items can be saved into player vault data. Decor items are not purchasable or withdrawable. This is a server-side design using ordinary vanilla items with no client resource pack or client mod required.
+
+As with other commits, **compile and test the updated Paper JAR** before deploying to the live server.
