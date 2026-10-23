@@ -176,6 +176,23 @@ public final class PaperSpawners implements Listener {
         inv.setItem(16,icon(Material.ANVIL,"Remove 1 spawner from stack"));
         inv.setItem(22,icon(DROP.get(s.mob()),"Stored: "+s.stored()+" | XP: "+s.xp()));
         inv.setItem(26,icon(Material.BARRIER,"Close"));
+        // Halloween frame: only unoccupied slots, never a spawner action.
+        int[] frame={0,1,2,3,5,6,7,8,9,11,13,15,17,18,19,20,21,23,24,25};
+        for(int slot:frame){
+            if(inv.getItem(slot)!=null)continue;
+            Material material;
+            String name;
+            if(slot==0||slot==8||slot==18){
+                material=Material.JACK_O_LANTERN;name="§6Halloween Pumpkin";
+            }else if(slot==13){
+                material=Material.COBWEB;name="§7Haunted Web";
+            }else if(slot%2==0){
+                material=Material.ORANGE_STAINED_GLASS_PANE;name="§6Halloween Border";
+            }else{
+                material=Material.BLACK_STAINED_GLASS_PANE;name="§8Halloween Border";
+            }
+            inv.setItem(slot,icon(material,name));
+        }
         p.openInventory(inv);
     }
     private static ItemStack icon(Material material,String name){
