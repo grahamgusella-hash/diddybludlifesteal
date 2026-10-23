@@ -61,7 +61,7 @@ public final class PaperSpawners implements Listener {
         prices.put(mob,Math.max(0,Math.min(Integer.MAX_VALUE,price(mob)+delta)));save();
     }
     public ItemStack spawner(String mob,int count){
-        if(!DROP.containsKey(mob))throw new IllegalArgumentException("Unknown spawner.");
+        if(mob==null||!DROP.containsKey(mob))throw new IllegalArgumentException("Unknown spawner.");
         ItemStack item=new ItemStack(Material.SPAWNER,Math.max(1,Math.min(64,count)));
         ItemMeta meta=item.getItemMeta();
         meta.setDisplayName("§6"+mob.replace('_',' ')+" Spawner");
@@ -71,7 +71,7 @@ public final class PaperSpawners implements Listener {
     public String mobFromItem(ItemStack item){
         if(item==null||item.getType()!=Material.SPAWNER||!item.hasItemMeta())return null;
         String mob=item.getItemMeta().getPersistentDataContainer().get(typeKey,PersistentDataType.STRING);
-        return DROP.containsKey(mob)?mob:null;
+        return mob!=null&&DROP.containsKey(mob)?mob:null;
     }
     public boolean isManaged(Block b){return placed.containsKey(key(b));}
     public void produce(){
@@ -92,6 +92,15 @@ public final class PaperSpawners implements Listener {
     }
     @EventHandler public void spawn(SpawnerSpawnEvent event){
         if(isManaged(event.getSpawner().getBlock()))event.setCancelled(true);
+    }
+    // Explosions cannot silently destroy spawner stacks and orphan stored resources.
+    @EventHandler(ignoreCancelled=true)
+    public void onEntityExplosion(org.bukkit.event.entity.EntityExplodeEvent e){
+        e.blockList().removeIf(this::isManaged);
+    }
+    @EventHandler(ignoreCancelled=true)
+    public void onBlockExplosion(org.bukkit.event.block.BlockExplodeEvent e){
+        e.blockList().removeIf(this::isManaged);
     }
     @EventHandler(priority=EventPriority.HIGH,ignoreCancelled=true)
     public void rightClick(PlayerInteractEvent e){
