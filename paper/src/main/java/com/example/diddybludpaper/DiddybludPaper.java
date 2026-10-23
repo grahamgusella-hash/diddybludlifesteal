@@ -33,6 +33,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<Integer,Order> orders=new LinkedHashMap<>();
     private final Map<UUID,Integer> sellTransactions=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
+    private UUID queuePlayer=null;
     private NamespacedKey heartKey,spawnerKey;
     private File dataFile;
     private PaperSpawners spawners;
@@ -553,7 +554,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             save();
         }
     }
-    @EventHandler public void onQuit(PlayerQuitEvent e){save();}
+    @EventHandler public void onQuit(PlayerQuitEvent e){
+        if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
+        save();
+    }
+    @EventHandler public void onDrag(InventoryDragEvent e){
+        if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
+        if(h.kind.startsWith("vault:"))return;
+        if(h.kind.equals("sell")){
+            for(int slot:e.getRawSlots())if(slot>=18&&slot<27){e.setCancelled(true);return;}
+            return;
+        }
+        e.setCancelled(true);
+    }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
         if(cmd.equals("diddyblud")){sender.sendMessage("Diddyblud Lifesteal Paper plugin active.");return true;}
@@ -673,7 +686,37 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                         p.teleport(new Location(world,x+0.5,y+1,z+0.5));break;
                     }return true;
                 }
-                case "rtpq" ->{p.sendMessage("RTP queue is not ported yet; use /rtp.");return true;}
+                case "rtpq" ->{
+                    if(args.length>0&&args[0].equalsIgnoreCase("leave")){
+                        if(uid.equals(queuePlayer)){queuePlayer=null;p.sendMessage("Left the RTP queue.");}
+                        return true;
+                    }
+                    Player queued=queuePlayer==null?null:Bukkit.getPlayer(queuePlayer);
+                    if(queued==null){
+                        queuePlayer=uid;p.sendMessage("Waiting for a second player. /rtpq leave to cancel.");
+                        return true;
+                    }
+                    if(queued.equals(p)){p.sendMessage("Already in queue.");return true;}
+                    queuePlayer=null;
+                    World world=p.getWorld();Random rng=new Random();
+                    boolean done=false;
+                    for(int attempt=0;attempt<20;attempt++){
+                        int x=p.getLocation().getBlockX()+rng.nextInt(16000)-8000;
+                        int z=p.getLocation().getBlockZ()+rng.nextInt(16000)-8000;
+                        int y=world.getHighestBlockYAt(x,z);
+                        Material ground=world.getBlockAt(x,y-1,z).getType();
+                        if(!ground.isSolid()||ground==Material.LAVA)continue;
+                        Location dest=new Location(world,x+0.5,y+1,z+0.5);
+                        Location other=dest.clone().add(1,0,0);
+                        if(!other.getBlock().isEmpty())continue;
+                        p.teleport(dest);queued.teleport(other);
+                        p.sendMessage("RTP queue matched with "+queued.getName());
+                        queued.sendMessage("RTP queue matched with "+p.getName());
+                        done=true;break;
+                    }
+                    if(!done)p.sendMessage("Couldn't find a safe queue destination.");
+                    return true;
+                }
                 case "spawner" ->{p.sendMessage("Right-click your placed spawner with an empty hand.");return true;}
             }
         }catch(Exception ex){p.sendMessage("§cInvalid command input: "+ex.getMessage());}
