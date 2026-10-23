@@ -40,3 +40,13 @@ Open **only `paper/` as a separate Gradle project**, configure JDK 25 and build.
 - Economy balances are stored in a YAML file: very busy public servers should move to a database-backed economy and transaction-safe inventory/escrow layer.
 - Shop prices are starter balancing values; admins can reprice to match the server economy.
 - Server software switching must be done through FalixNodes; updating code on GitHub cannot change a running host or install a plugin remotely.
+
+## Global server spawn and shutdown saves (latest update)
+
+- OP only: `/setspawn` stores the OP's exact current location (world, coordinates, yaw and pitch) as the **single shared server spawn**. It also updates that world's vanilla spawn coordinates as a fallback.
+- Everyone: `/spawn` teleports to the shared location. If nobody has used `/setspawn` yet, the command explains that spawn is not configured.
+- All player deaths respawn at the configured server spawn using the Paper respawn event, rather than individual beds/anchors (provided the world for the saved spawn exists).
+- Global spawn, all three private vault contents, shop categories and assignments, item buy/sell prices, shard prices, balances, homes and related game data are stored in `plugins/DiddybludLifesteal/server-data.yml`. If a vault is open during server shutdown, its contents are snapshotted directly before saving.
+- Mob-specific virtual spawner stacks, stored drops/XP and spawner shop prices are saved separately to `plugins/DiddybludLifesteal/spawners.yml`.
+- Both YAML files are written to temporary files and moved into place on successful save, reducing the chance of a truncated data file. Always stop the server normally and make world/plugin backups before software changes.
+- **These are source changes, not a verified compiled or tested Paper 26.3 plugin.** GitHub Actions must succeed before using the JAR, followed by in-game checks of vault contents, global spawn after restart, respawn behaviour and saved shop/spawner settings.
