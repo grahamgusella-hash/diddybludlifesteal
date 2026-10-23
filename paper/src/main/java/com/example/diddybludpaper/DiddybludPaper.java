@@ -255,6 +255,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             return v;
         }catch(ArithmeticException ex){throw new IllegalArgumentException("Invalid amount/overflow.");}
     }
+    private static long parseSetAmount(String input){
+        // Setting a balance to zero must be permitted; giving/paying zero stays invalid.
+        if("0".equals(input))return 0L;
+        return parseAmount(input);
+    }
     private static ItemStack icon(Material type,String name){
         ItemStack s=new ItemStack(type);
         ItemMeta m=s.getItemMeta();
@@ -675,23 +680,44 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             switch(cmd){
                 case "bal","balance" ->{p.sendMessage("§aBalance: $"+funds(uid));return true;}
                 case "shards" ->{
-                    if(args.length==0)p.sendMessage("§bShards: "+shards.getOrDefault(uid,0L));
-                    else if(args.length==3&&args[0].equalsIgnoreCase("give")&&p.hasPermission("diddyblud.admin")){
-                        Player target=Bukkit.getPlayerExact(args[1]);if(target==null){p.sendMessage("Player offline.");return true;}
-                        long v=parseAmount(args[2]),old=shards.getOrDefault(target.getUniqueId(),0L);
-                        shards.put(target.getUniqueId(),Math.addExact(old,v));save();p.sendMessage("Granted "+v+" shards.");
-                    }else p.sendMessage("/shards give <player> <amount> (OP)");
+                    if(args.length==0){
+                        p.sendMessage("§bShards: "+shards.getOrDefault(uid,0L));return true;
+                    }
+                    if(!p.hasPermission("diddyblud.admin")){
+                        p.sendMessage("§cOnly OPs can change shard balances.");return true;
+                    }
+                    if(args.length!=3||(!args[0].equalsIgnoreCase("give")&&!args[0].equalsIgnoreCase("set"))){
+                        p.sendMessage("Usage: /shards give <player> <amount> or /shards set <player> <amount>");
+                        return true;
+                    }
+                    Player target=Bukkit.getPlayerExact(args[1]);
+                    if(target==null){p.sendMessage("§cPlayer must be online.");return true;}
+                    boolean setting=args[0].equalsIgnoreCase("set");
+                    long amount=setting?parseSetAmount(args[2]):parseAmount(args[2]);
+                    long current=shards.getOrDefault(target.getUniqueId(),0L);
+                    long updated=setting?amount:Math.addExact(current,amount);
+                    shards.put(target.getUniqueId(),updated);
+                    save();
+                    p.sendMessage("§a"+target.getName()+" now has "+updated+" shards.");
+                    target.sendMessage("§bYour shard balance is now "+updated+".");
                     return true;
                 }
                 case "money" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
-                    if(args.length==3&&args[0].equalsIgnoreCase("give")){
-                        Player target=Bukkit.getPlayerExact(args[1]);
-                        if(target==null){p.sendMessage("Player offline.");return true;}
-                        long v=parseAmount(args[2]);
-                        if(credit(target.getUniqueId(),v))p.sendMessage("Granted $"+v);
-                        else p.sendMessage("Balance overflow.");
-                    }else p.sendMessage("/money give <player> <amount>");
+                    if(args.length!=3||(!args[0].equalsIgnoreCase("give")&&!args[0].equalsIgnoreCase("set"))){
+                        p.sendMessage("Usage: /money give <player> <amount> or /money set <player> <amount>");
+                        return true;
+                    }
+                    Player target=Bukkit.getPlayerExact(args[1]);
+                    if(target==null){p.sendMessage("§cPlayer must be online.");return true;}
+                    boolean setting=args[0].equalsIgnoreCase("set");
+                    long amount=setting?parseSetAmount(args[2]):parseAmount(args[2]);
+                    long current=funds(target.getUniqueId());
+                    long updated=setting?amount:Math.addExact(current,amount);
+                    cash.put(target.getUniqueId(),updated);
+                    save();
+                    p.sendMessage("§a"+target.getName()+" now has $"+updated+".");
+                    target.sendMessage("§aYour money balance is now $"+updated+".");
                     return true;
                 }
                 case "pay" ->{
@@ -709,12 +735,20 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                         if(args.length==2){heartCap=Math.max(1,Math.min(500,Integer.parseInt(args[1])));save();}
                         p.sendMessage("Server maximum: "+heartCap);return true;
                     }
-                    if(args.length==3){
-                        Player target=Bukkit.getPlayerExact(args[1]);if(target==null)return true;
+                    if(args.length==3&&(args[0].equalsIgnoreCase("set")||args[0].equalsIgnoreCase("give"))){
+                        Player target=Bukkit.getPlayerExact(args[1]);
+                        if(target==null){p.sendMessage("§cPlayer must be online.");return true;}
                         int count=Integer.parseInt(args[2]);
-                        int resulting=args[0].equalsIgnoreCase("set")?count:maxHearts(target)+count;
-                        if(resulting>=1&&resulting<=heartCap){setHearts(target,resulting);p.sendMessage("Hearts now "+resulting);}
-                    }
+                        int resulting=args[0].equalsIgnoreCase("set")?count:Math.addExact(maxHearts(target),count);
+                        if(count<1||resulting<1||resulting>heartCap){
+                            p.sendMessage("§cHearts must be between 1 and the server maximum ("+heartCap+").");
+                            return true;
+                        }
+                        setHearts(target,resulting);
+                        save();
+                        p.sendMessage("§aSet "+target.getName()+" to "+resulting+" hearts.");
+                        target.sendMessage("§cYour maximum hearts are now "+resulting+".");
+                    }else p.sendMessage("Usage: /hearts set <player> <amount>, /hearts give <player> <amount>, /hearts max <amount>");
                     return true;
                 }
                 case "withdraw" ->{
