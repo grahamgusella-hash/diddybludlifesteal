@@ -19,6 +19,8 @@ commands:
   auction: {description: Auction house}
   orders: {description: Buy orders GUI}
   order: {description: Create orders}
+  setspawn: {description: Set the server-wide spawn location (OP only), permission: diddyblud.admin}
+  spawn: {description: Teleport to the server-wide spawn location}
   sethome: {description: Set home}
   delhome: {description: Delete home}
   home: {description: Go home}
