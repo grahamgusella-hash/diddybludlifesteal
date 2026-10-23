@@ -229,8 +229,21 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             y.set(p+"buyer",v.buyer().toString());y.set(p+"item",v.item());
             y.set(p+"count",v.count());y.set(p+"price",v.price());
         });
-        try{getDataFolder().mkdirs();y.save(dataFile);}
-        catch(IOException ex){getLogger().severe("Failed to save server-data.yml: "+ex.getMessage());}
+        try{
+            getDataFolder().mkdirs();
+            File temporary=new File(getDataFolder(),"server-data.yml.tmp");
+            y.save(temporary);
+            try{
+                java.nio.file.Files.move(temporary.toPath(),dataFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            }catch(java.nio.file.AtomicMoveNotSupportedException ex){
+                java.nio.file.Files.move(temporary.toPath(),dataFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }catch(IOException ex){
+            getLogger().severe("Failed to save server-data.yml: "+ex.getMessage());
+        }
     }
     public static long parseAmount(String input){
         if(!input.matches("(?i)\\d+(?:\\.\\d+)?[kmbt]?"))throw new IllegalArgumentException("Use an amount like 1k, 1m, 1b or 1t.");
