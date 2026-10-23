@@ -91,7 +91,7 @@ public final class PaperSpawners implements Listener {
         if(changed)save();
     }
     @EventHandler public void spawn(SpawnerSpawnEvent event){
-        if(isManaged(event.getSpawner().getBlock()))event.setCancelled(true);
+        if(event.getSpawner()!=null && isManaged(event.getSpawner().getBlock()))event.setCancelled(true);
     }
     // Explosions cannot silently destroy spawner stacks and orphan stored resources.
     @EventHandler(ignoreCancelled=true)
