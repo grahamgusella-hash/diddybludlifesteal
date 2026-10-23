@@ -334,6 +334,30 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(26,icon(Material.BARRIER,"CANCEL — return items"));
         p.openInventory(inv);
     }
+    private void openRtp(Player p){
+        Inventory inv=menu("rtp",0,p.getUniqueId());
+        inv.setItem(11,icon(Material.GRASS_BLOCK,"Random teleport: near (up to 2000 blocks)"));
+        inv.setItem(15,icon(Material.ENDER_PEARL,"Random teleport: far (2000–8000 blocks)"));
+        inv.setItem(22,icon(Material.BARRIER,"Cancel"));
+        p.openInventory(inv);
+    }
+    private void teleportRandom(Player p,boolean far){
+        World world=p.getWorld();Random rng=new Random();
+        for(int tries=0;tries<30;tries++){
+            int distance=far?2000+rng.nextInt(6001):200+rng.nextInt(1801);
+            double angle=rng.nextDouble()*Math.PI*2;
+            int x=p.getLocation().getBlockX()+(int)(Math.cos(angle)*distance);
+            int z=p.getLocation().getBlockZ()+(int)(Math.sin(angle)*distance);
+            int y=world.getHighestBlockYAt(x,z);
+            Material below=world.getBlockAt(x,y-1,z).getType();
+            if(!below.isSolid()||below==Material.LAVA)continue;
+            Location at=new Location(world,x+0.5,y+1,z+0.5);
+            if(at.getBlock().isEmpty()&&at.clone().add(0,1,0).getBlock().isEmpty()){
+                p.teleport(at);p.sendMessage("§aRandom teleport successful.");return;
+            }
+        }
+        p.sendMessage("§cNo safe random destination found.");
+    }
     private void openCustom(Player p){
         Inventory inv=menu("customitems",0,p.getUniqueId());
         inv.setItem(10,heart(1));String[] mobs=PaperSpawners.MOBS;
@@ -463,7 +487,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(slot==26){p.closeInventory();return;}
         if(slot==18){if(h.page==0)openShop(p,0,false);else openList(p,type,h.page-1);return;}
         if(slot==25){openList(p,type,h.page+1);return;}
-        if(type.equals("customitems")){
+        if(type.equals("rtp")){
+            if(slot==11||slot==15){p.closeInventory();teleportRandom(p,slot==15);}
+            else if(slot==22)p.closeInventory();
+        }else if(type.equals("customitems")){
             if(!p.hasPermission("diddyblud.admin"))return;
             if(slot==10)give(p,heart(1));
             else if(slot>=11&&slot<11+PaperSpawners.MOBS.length)give(p,spawners.spawner(PaperSpawners.MOBS[slot-11],1));
@@ -675,17 +702,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     int number=args.length==0?1:Integer.parseInt(args[0]);
                     if(number>=1&&number<=3)openVault(p,number);return true;
                 }
-                case "rtp" ->{
-                    World world=p.getWorld();Random rng=new Random();
-                    for(int tries=0;tries<20;tries++){
-                        int x=p.getLocation().getBlockX()+rng.nextInt(16000)-8000;
-                        int z=p.getLocation().getBlockZ()+rng.nextInt(16000)-8000;
-                        int y=world.getHighestBlockYAt(x,z);
-                        Material ground=world.getBlockAt(x,y-1,z).getType();
-                        if(!ground.isSolid()||ground==Material.LAVA)continue;
-                        p.teleport(new Location(world,x+0.5,y+1,z+0.5));break;
-                    }return true;
-                }
+                case "rtp" ->{openRtp(p);return true;}
                 case "rtpq" ->{
                     if(args.length>0&&args[0].equalsIgnoreCase("leave")){
                         if(uid.equals(queuePlayer)){queuePlayer=null;p.sendMessage("Left the RTP queue.");}
