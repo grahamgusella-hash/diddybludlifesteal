@@ -13,6 +13,10 @@ import org.bukkit.event.player.*;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +36,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<Integer,Listing> auctions=new LinkedHashMap<>();
     private final Map<Integer,Order> orders=new LinkedHashMap<>();
     private final Map<UUID,Integer> sellTransactions=new HashMap<>();
+    // Online playtime in seconds until the next automatic +10 shard reward.
+    // Remaining time is saved so logging out or restarting cannot reset the clock.
+    private static final long SHARD_INTERVAL_SECONDS=30L*60L;
+    private static final long SHARD_REWARD=10L;
+    private final Map<UUID,Long> shardSecondsRemaining=new HashMap<>();
+    private final Map<UUID,Scoreboard> sidebars=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
     private UUID queuePlayer=null;
     private NamespacedKey heartKey,spawnerKey;
@@ -53,12 +63,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(spawners,this);
         getServer().getScheduler().runTaskTimer(this,()->spawners.produce(),100L,100L);
         getServer().getScheduler().runTaskTimer(this,this::save,6000L,6000L);
+        // Update the player HUD and online-playtime reward once every second.
+        getServer().getScheduler().runTaskTimer(this,this::tickShardRewards,20L,20L);
+        for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
     }
     @Override public void onDisable(){
         // Snapshot vaults that are still open when the server stops. Bukkit may
         // not have fired InventoryCloseEvent for them yet.
         captureOpenVaults();
+        // Keep countdowns in shardSecondsRemaining for the last data write.
         // Persist world spawn, all shop categories/prices, accounts and vaults.
         save();
         // Virtual spawner locations, stack counts, stored drops and XP use
@@ -154,6 +168,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        ConfigurationSection timers=y.getConfigurationSection("shard-reward-seconds");
+        if(timers!=null)for(String id:timers.getKeys(false)){
+            try {
+                UUID uuid=UUID.fromString(id);
+                long remaining=timers.getLong(id,SHARD_INTERVAL_SECONDS);
+                shardSecondsRemaining.put(uuid,Math.max(0L,Math.min(SHARD_INTERVAL_SECONDS,remaining)));
+            } catch(IllegalArgumentException ignored){}
+        }
         Location loadedSpawn=y.getLocation("server-spawn");
         if(loadedSpawn!=null)serverSpawn=loadedSpawn.clone();
         for(String section:new String[]{"cash","shards"}){
@@ -210,6 +232,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         y.set("server-spawn",serverSpawn);
         cash.forEach((id,v)->y.set("cash."+id,v));
         shards.forEach((id,v)->y.set("shards."+id,v));
+        shardSecondsRemaining.forEach((id,v)->y.set("shard-reward-seconds."+id,v));
         buy.forEach((id,v)->y.set("buy."+id,v));
         sell.forEach((id,v)->y.set("sell."+id,v));
         shardPrices.forEach((id,v)->y.set("shard-prices."+id,v));
@@ -680,8 +703,76 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(serverSpawn==null||serverSpawn.getWorld()==null)return;
         event.setRespawnLocation(serverSpawn.clone());
     }
+    // Uses vanilla scoreboard packets: no client mod or texture pack needed.
+    private void initializeSidebar(Player player){
+        UUID uuid=player.getUniqueId();
+        shardSecondsRemaining.putIfAbsent(uuid,SHARD_INTERVAL_SECONDS);
+        org.bukkit.scoreboard.ScoreboardManager manager=Bukkit.getScoreboardManager();
+        if(manager==null)return;
+        Scoreboard board=manager.getNewScoreboard();
+        Objective objective=board.registerNewObjective("diddyhud","dummy","§c§lDIDDYBLUD §fSMP");
+        objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        // Stable, unique score-entry keys prevent visible flicker on updates.
+        String[] entries={"§0","§1","§2","§3","§4","§5","§6"};
+        String[] teams={"top","money","shards","timer","reward","gap","bottom"};
+        for(int i=0;i<teams.length;i++){
+            Team team=board.registerNewTeam(teams[i]);
+            team.addEntry(entries[i]);
+            objective.getScore(entries[i]).setScore(teams.length-i);
+        }
+        board.getTeam("top").setPrefix("§8§m----------------");
+        board.getTeam("reward").setPrefix("§7Reward: §d+10 Shards");
+        board.getTeam("gap").setPrefix("§r ");
+        board.getTeam("bottom").setPrefix("§8§m----------------");
+        sidebars.put(uuid,board);
+        updateSidebar(player);
+        player.setScoreboard(board);
+    }
+    private void updateSidebar(Player p){
+        Scoreboard board=sidebars.get(p.getUniqueId());
+        if(board==null)return;
+        long remaining=shardSecondsRemaining.getOrDefault(p.getUniqueId(),SHARD_INTERVAL_SECONDS);
+        board.getTeam("money").setPrefix("§aMoney: §f$"+abbreviate(funds(p.getUniqueId())));
+        board.getTeam("shards").setPrefix("§bShards: §f"+abbreviate(shards.getOrDefault(p.getUniqueId(),0L)));
+        board.getTeam("timer").setPrefix(String.format(Locale.ROOT,
+            "§eNext: §f%02d:%02d",remaining/60,remaining%60));
+    }
+    private static String abbreviate(long value){
+        if(value>=1_000_000_000_000L)return String.format(Locale.ROOT,"%.1ft",value/1_000_000_000_000.0);
+        if(value>=1_000_000_000L)return String.format(Locale.ROOT,"%.1fb",value/1_000_000_000.0);
+        if(value>=1_000_000L)return String.format(Locale.ROOT,"%.1fm",value/1_000_000.0);
+        if(value>=10_000L)return String.format(Locale.ROOT,"%.1fk",value/1_000.0);
+        return Long.toString(value);
+    }
+    private void tickShardRewards(){
+        boolean payout=false;
+        for(Player player:Bukkit.getOnlinePlayers()){
+            UUID uuid=player.getUniqueId();
+            if(!sidebars.containsKey(uuid))initializeSidebar(player);
+            long remaining=shardSecondsRemaining.getOrDefault(uuid,SHARD_INTERVAL_SECONDS)-1L;
+            if(remaining<=0){
+                long old=shards.getOrDefault(uuid,0L);
+                if(old<=Long.MAX_VALUE-SHARD_REWARD){
+                    shards.put(uuid,old+SHARD_REWARD);
+                    remaining=SHARD_INTERVAL_SECONDS;
+                    player.sendMessage("§d§l+10 Shards §7— 30 minutes played!");
+                    payout=true;
+                }else{
+                    // Avoid overflowing a balance; retry after the next second.
+                    remaining=0;
+                }
+            }
+            shardSecondsRemaining.put(uuid,remaining);
+            updateSidebar(player);
+        }
+        if(payout)save();
+    }
+    @EventHandler public void onJoin(PlayerJoinEvent event){
+        initializeSidebar(event.getPlayer());
+    }
     @EventHandler public void onQuit(PlayerQuitEvent e){
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
+        sidebars.remove(e.getPlayer().getUniqueId());
         save();
     }
     @EventHandler public void onDrag(InventoryDragEvent e){
