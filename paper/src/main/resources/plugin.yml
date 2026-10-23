@@ -1,0 +1,19 @@
+name: DiddybludLifesteal
+version: 0.1.0-paper
+main: com.example.diddybludpaper.DiddybludPaper
+api-version: '26.3'
+description: Server-side Paper port of Diddyblud Lifesteal (early migration)
+commands:
+  diddyblud:
+    description: Paper migration status
+  shop:
+    description: Opens the category menu (migration preview)
+  bal:
+    description: Shows your balance
+  money:
+    description: Give money (OP only)
+  pay:
+    description: Pay another player
+permissions:
+  diddyblud.admin:
+    default: op
