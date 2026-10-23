@@ -37,6 +37,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private NamespacedKey heartKey,spawnerKey;
     private File dataFile;
     private PaperSpawners spawners;
+    // One world-wide spawn location shared by every player and persisted in server-data.yml.
+    private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
     private record Order(UUID buyer,String item,int count,long price){}
 
@@ -53,7 +55,31 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getScheduler().runTaskTimer(this,this::save,6000L,6000L);
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
     }
-    @Override public void onDisable(){ if(spawners!=null)spawners.save();save(); }
+    @Override public void onDisable(){
+        // Snapshot vaults that are still open when the server stops. Bukkit may
+        // not have fired InventoryCloseEvent for them yet.
+        captureOpenVaults();
+        // Persist world spawn, all shop categories/prices, accounts and vaults.
+        save();
+        // Virtual spawner locations, stack counts, stored drops and XP use
+        // their separate spawners.yml file.
+        if(spawners!=null)spawners.save();
+    }
+    private void captureOpenVaults(){
+        for(Player player:getServer().getOnlinePlayers()){
+            Inventory top=player.getOpenInventory().getTopInventory();
+            if(!(top.getHolder() instanceof MenuHolder holder))continue;
+            if(!holder.kind.startsWith("vault:"))continue;
+            String key=player.getUniqueId()+"-"+holder.kind.substring("vault:".length());
+            vaults.put(key,cloneItems(top.getContents()));
+        }
+    }
+    private static ItemStack[] cloneItems(ItemStack[] items){
+        ItemStack[] copy=new ItemStack[items.length];
+        for(int i=0;i<items.length;i++)
+            copy[i]=items[i]==null?null:items[i].clone();
+        return copy;
+    }
     public NamespacedKey spawnerKey(){return spawnerKey;}
     public long funds(UUID id){return cash.getOrDefault(id,0L);}
     public boolean charge(UUID id,long amount){
@@ -128,6 +154,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        Location loadedSpawn=y.getLocation("server-spawn");
+        if(loadedSpawn!=null)serverSpawn=loadedSpawn.clone();
         for(String section:new String[]{"cash","shards"}){
             ConfigurationSection s=y.getConfigurationSection(section);
             if(s!=null)for(String k:s.getKeys(false)){
@@ -179,6 +207,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        y.set("server-spawn",serverSpawn);
         cash.forEach((id,v)->y.set("cash."+id,v));
         shards.forEach((id,v)->y.set("shards."+id,v));
         buy.forEach((id,v)->y.set("buy."+id,v));
@@ -189,7 +218,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         y.set("off-categories",new ArrayList<>(offCategories));
         y.set("off-items",new ArrayList<>(offItems));
         homes.forEach((id,v)->y.set("homes."+id,v));
-        vaults.forEach((id,v)->y.set("vaults."+id,Arrays.asList(v)));
+        // Use a snapshot so inventory edits cannot mutate items while YAML is written.
+        vaults.forEach((id,v)->y.set("vaults."+id,Arrays.asList(cloneItems(v))));
         auctions.forEach((id,v)->{
             String p="auctions."+id+".";
             y.set(p+"seller",v.seller().toString());y.set(p+"stack",v.stack());y.set(p+"price",v.price());
@@ -598,9 +628,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 }
             }
         }else if(h.kind.startsWith("vault:")){
-            vaults.put(p.getUniqueId()+"-"+h.kind.substring(6),e.getInventory().getContents().clone());
+            vaults.put(p.getUniqueId()+"-"+h.kind.substring(6),
+                cloneItems(e.getInventory().getContents()));
             save();
         }
+    }
+    @EventHandler(priority=EventPriority.HIGHEST)
+    public void onPlayerRespawn(PlayerRespawnEvent event){
+        // The configured server spawn overrides beds, anchors and default world spawn
+        // for all deaths, including deaths in other dimensions.
+        if(serverSpawn==null||serverSpawn.getWorld()==null)return;
+        event.setRespawnLocation(serverSpawn.clone());
     }
     @EventHandler public void onQuit(PlayerQuitEvent e){
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
@@ -699,6 +737,27 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                         if(count<1||count>64||shopItem(item)==null||!charge(uid,cost))return true;
                         orders.put(nextOrder++,new Order(uid,item,count,cost));save();
                     }else openList(p,"orders",0);
+                    return true;
+                }
+                case "setspawn" ->{
+                    if(!p.hasPermission("diddyblud.admin")){
+                        p.sendMessage("§cOnly OP players may set the server spawn.");return true;
+                    }
+                    serverSpawn=p.getLocation().clone();
+                    // Also set the vanilla world's spawn as a fallback for players
+                    // if the plugin is later disabled.
+                    p.getWorld().setSpawnLocation(serverSpawn);
+                    save();
+                    p.sendMessage("§aServer spawn set and saved for everyone.");
+                    return true;
+                }
+                case "spawn" ->{
+                    if(serverSpawn==null||serverSpawn.getWorld()==null){
+                        p.sendMessage("§cNo server spawn has been set. Ask an OP to use /setspawn.");
+                        return true;
+                    }
+                    if(p.teleport(serverSpawn.clone()))p.sendMessage("§aTeleported to server spawn.");
+                    else p.sendMessage("§cUnable to teleport to spawn.");
                     return true;
                 }
                 case "sethome" ->{homes.put(uid,p.getLocation().clone());save();p.sendMessage("Home set.");return true;}
