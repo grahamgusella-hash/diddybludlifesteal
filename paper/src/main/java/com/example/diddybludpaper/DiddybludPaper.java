@@ -365,7 +365,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private Inventory menu(String kind,int page,UUID owner){
         MenuHolder h=new MenuHolder(kind,page,owner);
-        Inventory inv=Bukkit.createInventory(h,27,kind.length()>28?kind.substring(0,28):kind);
+        String title=kind.startsWith("vault:") ? "§6§lHaunted Vault §8#"+kind.substring(6)
+            : (kind.length()>28?kind.substring(0,28):kind);
+        Inventory inv=Bukkit.createInventory(h,27,title);
         h.inv=inv;return inv;
     }
     private static final class MenuHolder implements InventoryHolder {
