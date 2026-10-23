@@ -312,11 +312,33 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(p.getGameMode()!=GameMode.CREATIVE)held.setAmount(held.getAmount()-1);
         p.sendMessage("§aRedeemed one heart.");
     }
-    @EventHandler public void onDeath(PlayerDeathEvent e){
-        Player victim=e.getEntity(),killer=victim.getKiller();
-        if(killer==null||killer.equals(victim)||maxHearts(victim)<=1||maxHearts(killer)>=heartCap)return;
-        setHearts(victim,maxHearts(victim)-1);
-        setHearts(killer,maxHearts(killer)+1);
+    @EventHandler(priority=EventPriority.HIGHEST)
+    public void onDeath(PlayerDeathEvent e){
+        Player victim=e.getEntity();
+        Player killer=victim.getKiller();
+        int heartsBeforeDeath=maxHearts(victim);
+
+        // A death costs one maximum heart, whether caused by PvP or something else.
+        // Bukkit cannot assign zero maximum health, so a player whose final heart
+        // is lost is banned rather than left at zero health.
+        if(heartsBeforeDeath<=1){
+            // Keep the last valid max-health value until the ban has been issued.
+            // Vanilla's ban command writes to banned-players.json persistently.
+            String victimName=victim.getName();
+            getServer().getScheduler().runTask(this,()->{
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                    "ban "+victimName+" You ran out of Lifesteal hearts");
+                if(victim.isOnline())victim.kickPlayer("§cYou ran out of Lifesteal hearts.");
+            });
+        }else{
+            setHearts(victim,heartsBeforeDeath-1);
+        }
+
+        // Only player kills award a redeemable Heart item. The killer does not
+        // automatically gain max health: somebody must collect and redeem it.
+        if(killer!=null&&!killer.equals(victim)){
+            e.getDrops().add(heart(1));
+        }
     }
     private Inventory menu(String kind,int page,UUID owner){
         MenuHolder h=new MenuHolder(kind,page,owner);
