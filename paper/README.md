@@ -50,3 +50,13 @@ Open **only `paper/` as a separate Gradle project**, configure JDK 25 and build.
 - Mob-specific virtual spawner stacks, stored drops/XP and spawner shop prices are saved separately to `plugins/DiddybludLifesteal/spawners.yml`.
 - Both YAML files are written to temporary files and moved into place on successful save, reducing the chance of a truncated data file. Always stop the server normally and make world/plugin backups before software changes.
 - **These are source changes, not a verified compiled or tested Paper 26.3 plugin.** GitHub Actions must succeed before using the JAR, followed by in-game checks of vault contents, global spawn after restart, respawn behaviour and saved shop/spawner settings.
+
+## OP balance and heart setting commands
+
+All three commands require OP/admin permission and an **online player**:
+
+- `/hearts set Steve 20` — set Steve to exactly 20 maximum hearts (bounded by `/hearts max`).
+- `/money set Steve 1m` — replace Steve's money balance with exactly $1,000,000.
+- `/shards set Steve 50k` — replace Steve's shard balance with exactly 50,000.
+
+Both money and shards accept whole numbers or `k`, `m`, `b`, `t` shorthand; setting either to `0` is allowed. These are **set**, not add, operations. The existing `/hearts give`, `/money give`, and `/shards give` still add amounts. Money and shard updates save immediately to `server-data.yml`; maximum-health updates use the player attribute persisted by Minecraft's player data. Source remains uncompiled and untested; run the Paper GitHub Actions workflow before deployment.
