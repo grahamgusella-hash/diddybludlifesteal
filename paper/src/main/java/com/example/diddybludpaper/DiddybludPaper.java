@@ -280,19 +280,36 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         MenuHolder(String kind,int page,UUID owner){this.kind=kind;this.page=page;this.owner=owner;}
         public Inventory getInventory(){return inv;}
     }
+    private static final String[] FIXED_CATEGORIES={
+        "spawners","combat","enchantments","shards",
+        "drops","blocks","farming","storage","redstone"
+    };
+    private static final int[] FIXED_SLOTS={11,12,13,14,20,21,22,23,24};
+    private List<String> visibleCategories(int page){
+        if(page==0)return Arrays.asList(FIXED_CATEGORIES);
+        List<String> extras=new ArrayList<>();
+        for(String category:categories.keySet()){
+            if(!Arrays.asList(FIXED_CATEGORIES).contains(category))extras.add(category);
+        }
+        int begin=(page-1)*18;
+        if(begin>=extras.size())return Collections.emptyList();
+        return extras.subList(begin,Math.min(begin+18,extras.size()));
+    }
     private void openShop(Player p,int page,boolean admin){
         Inventory inv=menu(admin?"shopadmin":"shop",page,p.getUniqueId());
-        List<String> list=new ArrayList<>(categories.keySet());
-        int start=page*18;
-        for(int i=0;i<18&&start+i<list.size();i++){
-            String category=list.get(start+i);
-            inv.setItem(i,icon(categories.get(category),(offCategories.contains(category)?"§cOFF §r":"")+category));
+        List<String> shown=visibleCategories(page);
+        for(int i=0;i<shown.size();i++){
+            String category=shown.get(i);
+            Material material=categories.get(category);
+            if(material==null)continue;
+            int slot=page==0?FIXED_SLOTS[i]:i;
+            inv.setItem(slot,icon(material,(offCategories.contains(category)?"§cOFF §r":"")+category));
         }
         inv.setItem(18,icon(Material.ARROW,"Previous page"));
         inv.setItem(25,icon(Material.ARROW,"Next page"));
         if(p.hasPermission("diddyblud.admin")){
             inv.setItem(26,icon(Material.COMPARATOR,admin?"Exit editor":"Admin settings"));
-            if(admin)inv.setItem(22,icon(Material.ANVIL,"Hold renamed item: add category"));
+            if(admin)inv.setItem(19,icon(Material.ANVIL,"Hold renamed item: add category"));
         }
         p.openInventory(inv);
     }
@@ -424,7 +441,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(type.equals("shop")||type.equals("shopadmin")){
             boolean admin=type.equals("shopadmin")&&p.hasPermission("diddyblud.admin");
             if(slot==26&&p.hasPermission("diddyblud.admin")){openShop(p,0,!admin);return;}
-            if(slot==22&&admin){
+            if(slot==19&&admin){
                 ItemStack held=p.getInventory().getItemInMainHand();
                 if(held.getType().isAir()||!held.hasItemMeta()||!held.getItemMeta().hasDisplayName()){
                     p.sendMessage("§cRename the category icon item in an anvil first.");return;
@@ -434,8 +451,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             if(slot==18){openShop(p,Math.max(0,h.page-1),admin);return;}
             if(slot==25){openShop(p,h.page+1,admin);return;}
-            List<String> cats=new ArrayList<>(categories.keySet());int at=h.page*18+slot;
-            if(slot>=18||at>=cats.size())return;
+            List<String> cats=visibleCategories(h.page);
+            int at=-1;
+            if(h.page==0){
+                for(int i=0;i<FIXED_SLOTS.length;i++)if(FIXED_SLOTS[i]==slot){at=i;break;}
+            }else if(slot<18)at=slot;
+            if(at<0||at>=cats.size())return;
             String cat=cats.get(at);
             if(admin&&e.isShiftClick()){
                 if(!offCategories.add(cat))offCategories.remove(cat);save();openShop(p,h.page,true);return;
