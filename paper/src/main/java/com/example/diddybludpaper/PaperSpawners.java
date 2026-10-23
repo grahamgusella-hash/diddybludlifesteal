@@ -240,7 +240,20 @@ public final class PaperSpawners implements Listener {
             y.set(pre+"xp",s.xp());y.set(pre+"owner",s.owner().toString());
         });
         prices.forEach((mob,cost)->y.set("prices."+mob,cost));
-        try{file.getParentFile().mkdirs();y.save(file);}
-        catch(IOException ex){plugin.getLogger().severe("Could not save spawners.yml: "+ex.getMessage());}
+        try{
+            file.getParentFile().mkdirs();
+            File temporary=new File(file.getParentFile(),"spawners.yml.tmp");
+            y.save(temporary);
+            try{
+                java.nio.file.Files.move(temporary.toPath(),file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            }catch(java.nio.file.AtomicMoveNotSupportedException ex){
+                java.nio.file.Files.move(temporary.toPath(),file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }catch(IOException ex){
+            plugin.getLogger().severe("Could not save spawners.yml: "+ex.getMessage());
+        }
     }
 }
