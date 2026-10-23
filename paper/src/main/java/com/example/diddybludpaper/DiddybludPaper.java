@@ -746,7 +746,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     serverSpawn=p.getLocation().clone();
                     // Also set the vanilla world's spawn as a fallback for players
                     // if the plugin is later disabled.
-                    p.getWorld().setSpawnLocation(serverSpawn);
+                    p.getWorld().setSpawnLocation(serverSpawn.getBlockX(),serverSpawn.getBlockY(),serverSpawn.getBlockZ());
                     save();
                     p.sendMessage("§aServer spawn set and saved for everyone.");
                     return true;
