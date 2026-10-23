@@ -60,3 +60,11 @@ All three commands require OP/admin permission and an **online player**:
 - `/shards set Steve 50k` — replace Steve's shard balance with exactly 50,000.
 
 Both money and shards accept whole numbers or `k`, `m`, `b`, `t` shorthand; setting either to `0` is allowed. These are **set**, not add, operations. The existing `/hearts give`, `/money give`, and `/shards give` still add amounts. Money and shard updates save immediately to `server-data.yml`; maximum-health updates use the player attribute persisted by Minecraft's player data. Source remains uncompiled and untested; run the Paper GitHub Actions workflow before deployment.
+
+## Lifesteal elimination and PvP heart drops
+
+- **Every death costs one maximum heart**, including environmental deaths and PvP.
+- On a player's **final heart**, dying triggers the vanilla server `/ban` command on the next server tick; the ban persists across restarts using Paper's normal ban list. The player's maximum health is left at the last valid value because Minecraft does not allow a zero maximum-health attribute.
+- When a player kills another player, the victim's death loot receives **one genuine, tagged Lifesteal Heart** (Nether Star), which can be picked up and redeemed by right-clicking. The killer no longer gains the heart automatically. Regular environmental deaths do not create a heart drop.
+- **Unbanning** an eliminated player remains a server operator decision (vanilla `/pardon <player>`). Pardoning alone does not reset the player's stored heart count.
+- These changes are committed to the Paper source, **not yet compiled or tested**. Before using a production world, verify both the ban flow and death-drop persistence on a test player account.
