@@ -44,7 +44,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Scoreboard> sidebars=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
     private UUID queuePlayer=null;
-    private NamespacedKey heartKey,spawnerKey;
+    private NamespacedKey heartKey,spawnerKey,halloweenKey;
     private File dataFile;
     private PaperSpawners spawners;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
@@ -56,6 +56,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         saveDefaultConfig();
         heartKey=new NamespacedKey(this,"heart");
         spawnerKey=new NamespacedKey(this,"spawner_type");
+        halloweenKey=new NamespacedKey(this,"halloween_filler");
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
         spawners=new PaperSpawners(this,spawnerKey);
@@ -324,16 +325,49 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         a.setBaseValue(Math.max(2,value*2));
         p.setHealth(Math.min(p.getHealth(),a.getValue()));
     }
-    @EventHandler public void onHeartUse(PlayerInteractEvent e){
-        if(e.getHand()!=EquipmentSlot.HAND||e.getAction()!=org.bukkit.event.block.Action.RIGHT_CLICK_AIR&&
-           e.getAction()!=org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK)return;
-        ItemStack held=e.getPlayer().getInventory().getItemInMainHand();
-        if(!isHeart(held))return;
-        e.setCancelled(true);Player p=e.getPlayer();
-        if(maxHearts(p)>=heartCap){p.sendMessage("§cMaximum "+heartCap+" hearts reached.");return;}
-        setHearts(p,maxHearts(p)+1);
-        if(p.getGameMode()!=GameMode.CREATIVE)held.setAmount(held.getAmount()-1);
-        p.sendMessage("§aRedeemed one heart.");
+    @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false)
+    public void onHeartUse(PlayerInteractEvent event){
+        org.bukkit.event.block.Action action=event.getAction();
+        if(action!=org.bukkit.event.block.Action.RIGHT_CLICK_AIR&&
+           action!=org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK)return;
+        EquipmentSlot hand=event.getHand();
+        if(hand!=EquipmentSlot.HAND&&hand!=EquipmentSlot.OFF_HAND)return;
+        Player player=event.getPlayer();
+        ItemStack stack=hand==EquipmentSlot.HAND
+            ?player.getInventory().getItemInMainHand()
+            :player.getInventory().getItemInOffHand();
+        if(!isHeart(stack))return;
+
+        // Redeem before Minecraft treats the Nether Star as an ordinary item or
+        // performs the right-clicked block interaction; works in either hand.
+        event.setCancelled(true);
+        int current=maxHearts(player);
+        if(current>=heartCap){
+            player.sendMessage("§cYou have reached the "+heartCap+"-heart maximum.");
+            return;
+        }
+        if(player.getAttribute(Attribute.MAX_HEALTH)==null){
+            player.sendMessage("§cCannot redeem: your maximum-health attribute is unavailable.");
+            return;
+        }
+        try{
+            setHearts(player,current+1);
+        }catch(IllegalArgumentException ex){
+            getLogger().warning("Cannot apply heart to "+player.getName()+": "+ex.getMessage());
+            player.sendMessage("§cCould not apply this Heart. Ask an OP to check the console.");
+            return;
+        }
+        if(player.getGameMode()!=GameMode.CREATIVE){
+            int remaining=stack.getAmount()-1;
+            ItemStack replacement=remaining<=0?new ItemStack(Material.AIR):stack.clone();
+            if(remaining>0)replacement.setAmount(remaining);
+            if(hand==EquipmentSlot.HAND)player.getInventory().setItemInMainHand(replacement);
+            else player.getInventory().setItemInOffHand(replacement);
+        }
+        // Let the newly gained heart be usable immediately.
+        var attribute=player.getAttribute(Attribute.MAX_HEALTH);
+        if(attribute!=null)player.setHealth(Math.min(attribute.getValue(),player.getHealth()+2.0));
+        player.sendMessage("§a❤ Heart redeemed! Maximum hearts: "+(current+1)+"/"+heartCap);
     }
     @EventHandler(priority=EventPriority.HIGHEST)
     public void onDeath(PlayerDeathEvent e){
@@ -423,7 +457,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }else{
                 type=Material.BLACK_STAINED_GLASS_PANE;label="§8Halloween Border";
             }
-            inv.setItem(slot,icon(type,label));
+            ItemStack decoration=icon(type,label);
+            ItemMeta decorationMeta=decoration.getItemMeta();
+            decorationMeta.getPersistentDataContainer().set(halloweenKey,PersistentDataType.BYTE,(byte)1);
+            decoration.setItemMeta(decorationMeta);
+            inv.setItem(slot,decoration);
         }
     }
     private void openShop(Player p,int page,boolean admin){
@@ -576,6 +614,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         e.setCancelled(true);
         if(slot<0||slot>=27)return;
+        ItemStack clicked=e.getView().getTopInventory().getItem(slot);
+        if(clicked!=null&&clicked.hasItemMeta()&&
+            clicked.getItemMeta().getPersistentDataContainer().has(halloweenKey,PersistentDataType.BYTE))
+            return; // Halloween filler is decorative, never a shop product or button.
         if(type.equals("shop")||type.equals("shopadmin")){
             boolean admin=type.equals("shopadmin")&&p.hasPermission("diddyblud.admin");
             if(slot==26&&p.hasPermission("diddyblud.admin")){openShop(p,0,!admin);return;}
@@ -832,7 +874,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
-        if(cmd.equals("diddyblud")){sender.sendMessage("Diddyblud Lifesteal Paper plugin active.");return true;}
+        if(cmd.equals("diddyblud")){
+            sender.sendMessage("§6Diddyblud Lifesteal §fPaper §a"+getDescription().getVersion());
+            sender.sendMessage("§7Features: Heart right-click, Halloween GUIs, scoreboard, and shard rewards.");
+            return true;
+        }
         if(!(sender instanceof Player p)){sender.sendMessage("In-game command required.");return true;}
         UUID uid=p.getUniqueId();
         try{
