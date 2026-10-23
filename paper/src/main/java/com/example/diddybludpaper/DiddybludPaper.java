@@ -388,6 +388,42 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(begin>=extras.size())return Collections.emptyList();
         return extras.subList(begin,Math.min(begin+18,extras.size()));
     }
+    /**
+     * Decorations only occupy unassigned UI slots. Vault slots are reserved
+     * for player items, so their 27 storage slots are never decorated.
+     */
+    private void decorateHalloween(Inventory inv,String kind){
+        if(kind.startsWith("vault:"))return;
+        int[] spaces;
+        if(kind.equals("shop")||kind.equals("shopadmin")){
+            spaces=new int[]{0,1,2,6,7,8,9,10,15,16,17,20,21,22,23,24};
+        }else if(kind.equals("sell")){
+            spaces=new int[]{18,19,20,21,23,24,25};
+        }else if(kind.startsWith("cat:")||kind.startsWith("catadmin:")){
+            spaces=new int[]{20,21,23,24};
+        }else if(kind.equals("customitems")){
+            spaces=new int[]{0,1,2,3,4,5,6,7,8,9,20,21,22,23,24,25};
+        }else if(kind.equals("rtp")){
+            spaces=new int[]{0,1,2,3,4,5,6,7,8,9,10,12,13,14,16,17,18,19,20,21,23,24,25,26};
+        }else{
+            spaces=new int[]{19,20,21,22,23,24};
+        }
+        for(int slot:spaces){
+            if(slot<0||slot>=inv.getSize()||inv.getItem(slot)!=null)continue;
+            Material type;
+            String label;
+            if(slot==0||slot==8||slot==18||slot==26){
+                type=Material.JACK_O_LANTERN;label="§6Halloween Pumpkin";
+            }else if(slot==4||slot==13||slot==22){
+                type=Material.COBWEB;label="§7Haunted Web";
+            }else if(slot%2==0){
+                type=Material.ORANGE_STAINED_GLASS_PANE;label="§6Halloween Border";
+            }else{
+                type=Material.BLACK_STAINED_GLASS_PANE;label="§8Halloween Border";
+            }
+            inv.setItem(slot,icon(type,label));
+        }
+    }
     private void openShop(Player p,int page,boolean admin){
         Inventory inv=menu(admin?"shopadmin":"shop",page,p.getUniqueId());
         List<String> shown=visibleCategories(page);
@@ -404,6 +440,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             inv.setItem(26,icon(Material.COMPARATOR,admin?"Exit editor":"Admin settings"));
             if(admin)inv.setItem(19,icon(Material.ANVIL,"Hold renamed item: add category"));
         }
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private void openCategory(Player p,String category,int page,boolean admin){
@@ -423,6 +460,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(25,icon(Material.PAPER,"Next"));
         if(admin)inv.setItem(22,icon(Material.ANVIL,"Add held item to category"));
         inv.setItem(26,icon(Material.EMERALD,"Balance $"+funds(p.getUniqueId())));
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private ItemStack shopItem(String id){
@@ -442,6 +480,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Inventory inv=menu("sell",0,p.getUniqueId());
         inv.setItem(22,icon(Material.EMERALD,"CONFIRM sale"));
         inv.setItem(26,icon(Material.BARRIER,"CANCEL — return items"));
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private void openRtp(Player p){
@@ -449,6 +488,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(11,icon(Material.GRASS_BLOCK,"Random teleport: near (up to 2000 blocks)"));
         inv.setItem(15,icon(Material.ENDER_PEARL,"Random teleport: far (2000–8000 blocks)"));
         inv.setItem(22,icon(Material.BARRIER,"Cancel"));
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private void teleportRandom(Player p,boolean far){
@@ -472,6 +512,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Inventory inv=menu("customitems",0,p.getUniqueId());
         inv.setItem(10,heart(1));String[] mobs=PaperSpawners.MOBS;
         for(int i=0;i<mobs.length;i++)inv.setItem(11+i,spawners.spawner(mobs[i],1));
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private void openVault(Player p,int number){
@@ -479,6 +520,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Inventory inv=menu("vault:"+number,0,p.getUniqueId());
         ItemStack[] stored=vaults.get(key);
         if(stored!=null)inv.setContents(stored);
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private void openList(Player p,String type,int page){
@@ -512,6 +554,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(18,icon(Material.ARROW,"Back / previous"));
         inv.setItem(25,icon(Material.ARROW,"Next"));
         inv.setItem(26,icon(Material.BARRIER,"Close"));
+        decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
     private void give(Player p,ItemStack item){HashMap<Integer,ItemStack> extra=p.getInventory().addItem(item);
