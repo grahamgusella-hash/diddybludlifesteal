@@ -30,7 +30,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<String,String> assignments=new LinkedHashMap<>();
     private final Map<String,Material> categories=new LinkedHashMap<>();
     private final Set<String> offCategories=new HashSet<>(),offItems=new HashSet<>();
-    private final Map<UUID,Location> homes=new HashMap<>();
+    private final Map<UUID,Map<String,Location>> homes=new HashMap<>();
     private final Map<UUID,UUID> requests=new HashMap<>();
     private final Map<String,ItemStack[]> vaults=new HashMap<>();
     private final Map<Integer,Listing> auctions=new LinkedHashMap<>();
