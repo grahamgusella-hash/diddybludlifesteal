@@ -26,6 +26,8 @@ import java.util.*;
 /** Paper-only Diddyblud Lifesteal. Vanilla players need no client mod. */
 public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> cash=new HashMap<>(),shards=new HashMap<>();
+    private final Map<UUID,Long> leaderboardPlaytime=new HashMap<>(),leaderboardHearts=new HashMap<>();
+    private LeaderboardHolograms leaderboards;
     private final Map<String,Long> buy=new LinkedHashMap<>(),sell=new LinkedHashMap<>(),shardPrices=new LinkedHashMap<>();
     private final Map<String,String> assignments=new LinkedHashMap<>();
     private final Map<String,Material> categories=new LinkedHashMap<>();
@@ -61,6 +63,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
         for(World world:getServer().getWorlds())setRadarOff(world);
+        leaderboards=new LeaderboardHolograms(this,this::leaderboardScores);
         spawners=new PaperSpawners(this,spawnerKey);
         getServer().getPluginManager().registerEvents(this,this);
         getServer().getPluginManager().registerEvents(spawners,this);
@@ -68,6 +71,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getScheduler().runTaskTimer(this,this::save,6000L,6000L);
         // Update the player HUD and online-playtime reward once every second.
         getServer().getScheduler().runTaskTimer(this,this::tickShardRewards,20L,20L);
+        getServer().getScheduler().runTaskTimer(this,()->leaderboards.refresh(),40L,400L);
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
     }
@@ -81,6 +85,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Virtual spawner locations, stack counts, stored drops and XP use
         // their separate spawners.yml file.
         if(spawners!=null)spawners.save();
+        if(leaderboards!=null)leaderboards.close();
     }
     private void captureOpenVaults(){
         for(Player player:getServer().getOnlinePlayers()){
@@ -181,10 +186,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         Location loadedSpawn=y.getLocation("server-spawn");
         if(loadedSpawn!=null)serverSpawn=loadedSpawn.clone();
-        for(String section:new String[]{"cash","shards"}){
+        for(String section:new String[]{"cash","shards","leaderboard-playtime","leaderboard-hearts"}){
             ConfigurationSection s=y.getConfigurationSection(section);
             if(s!=null)for(String k:s.getKeys(false)){
-                try{(section.equals("cash")?cash:shards).put(UUID.fromString(k),Math.max(0,s.getLong(k)));}
+                try{(section.equals("cash")?cash:section.equals("shards")?shards:
+                    section.equals("leaderboard-playtime")?leaderboardPlaytime:leaderboardHearts)
+                    .put(UUID.fromString(k),Math.max(0,s.getLong(k)));}
                 catch(Exception ignored){}
             }
         }
@@ -258,6 +265,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         y.set("server-spawn",serverSpawn);
         cash.forEach((id,v)->y.set("cash."+id,v));
         shards.forEach((id,v)->y.set("shards."+id,v));
+        leaderboardPlaytime.forEach((id,v)->y.set("leaderboard-playtime."+id,v));
+        leaderboardHearts.forEach((id,v)->y.set("leaderboard-hearts."+id,v));
         shardSecondsRemaining.forEach((id,v)->y.set("shard-reward-seconds."+id,v));
         buy.forEach((id,v)->y.set("buy."+id,v));
         sell.forEach((id,v)->y.set("sell."+id,v));
@@ -375,6 +384,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         var a=p.getAttribute(Attribute.MAX_HEALTH);
         if(a==null)return;
         a.setBaseValue(Math.max(2,value*2));
+        leaderboardHearts.put(p.getUniqueId(),(long)Math.max(1,value));
         p.setHealth(Math.min(p.getHealth(),a.getValue()));
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false)
@@ -426,6 +436,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Player victim=e.getEntity();
         Player killer=victim.getKiller();
         int heartsBeforeDeath=maxHearts(victim);
+        leaderboardHearts.put(victim.getUniqueId(),(long)Math.max(0,heartsBeforeDeath-1));
 
         // A death costs one maximum heart, whether caused by PvP or something else.
         // Bukkit cannot assign zero maximum health, so a player whose final heart
@@ -932,6 +943,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         event.setRespawnLocation(serverSpawn.clone());
     }
     // Uses vanilla scoreboard packets: no client mod or texture pack needed.
+    private Map<UUID,Long> leaderboardScores(String type){
+        if(type.equals("money"))return new HashMap<>(cash);
+        if(type.equals("playtime"))return new HashMap<>(leaderboardPlaytime);
+        return new HashMap<>(leaderboardHearts);
+    }
     private void initializeSidebar(Player player){
         UUID uuid=player.getUniqueId();
         shardSecondsRemaining.putIfAbsent(uuid,SHARD_INTERVAL_SECONDS);
@@ -977,6 +993,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         boolean payout=false;
         for(Player player:Bukkit.getOnlinePlayers()){
             UUID uuid=player.getUniqueId();
+            leaderboardPlaytime.merge(uuid,1L,Long::sum);
             if(!sidebars.containsKey(uuid))initializeSidebar(player);
             // Other plugins can replace a player's entire scoreboard; restore
             // our sidebar without resetting reward timers or recreating it.
@@ -1003,6 +1020,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @EventHandler public void onJoin(PlayerJoinEvent event){
         Player player=event.getPlayer();
+        leaderboardHearts.putIfAbsent(player.getUniqueId(),(long)maxHearts(player));
+        leaderboardPlaytime.putIfAbsent(player.getUniqueId(),0L);
         // Let other join handlers finish first; recurring tick also repairs a
         // scoreboard replaced after this delayed first refresh.
         getServer().getScheduler().runTask(this,()->{
@@ -1025,6 +1044,26 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("leaderboard")){
+            if(!(sender instanceof Player player)){sender.sendMessage("Use this command in-game.");return true;}
+            if(!player.hasPermission("diddyblud.admin")){
+                player.sendMessage("§cOnly OPs can place leaderboards.");return true;
+            }
+            if(args.length<1||args.length>2||
+                !(args[0].equalsIgnoreCase("money")||args[0].equalsIgnoreCase("playtime")||
+                  args[0].equalsIgnoreCase("hearts"))||
+                (args.length==2&&!args[1].equalsIgnoreCase("remove"))){
+                player.sendMessage("§eUsage: /leaderboard <money|playtime|hearts> [remove]");
+                return true;
+            }
+            String type=args[0].toLowerCase(Locale.ROOT);
+            if(args.length==2){
+                player.sendMessage(leaderboards.remove(type)?"§aLeaderboard removed.":"§cNo placed leaderboard of that type.");
+            }else{
+                leaderboards.place(player,type);
+            }
+            return true;
+        }
         if(cmd.equals("sidebar")||cmd.equals("scoreboard")){
             if(!(sender instanceof Player player)){sender.sendMessage("Only players have a sidebar.");return true;}
             initializeSidebar(player);
