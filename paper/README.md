@@ -126,3 +126,9 @@ Changes are committed as source but **not yet verified by compilation or server 
 - Install **only** the updated **0.5.0-paper** JAR and confirm with `/diddyblud`. No code changes reach FalixNodes until the JAR is compiled and uploaded. If the sidebar still does not appear, inspect server startup errors and competing scoreboard plugins.
 
 Source changes need compilation and server testing before being considered verified.
+
+## 0.6.0-paper: Remove individual shop listings
+
+An OP opens `/shop`, clicks **Admin settings**, chooses a category and **Shift + right-clicks** a product to **delete it from the shop**. The item is removed from that category and its configured shop buy/sell prices; existing items in players' inventories are unaffected. The deletion survives server restarts, including for original starter listings. The editor displays its controls in item lore.
+
+To restore a deleted listing, hold the matching item and use **Add held item to category** in the category editor, then adjust prices as desired. Ordinary vanilla items can still be sold using the general `/sell` fallback pricing if removed from a *shop buy listing*; deleting a listing does not ban the material from the economy.
