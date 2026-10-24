@@ -891,8 +891,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // disabled via the shop editor. Only special shop items can be disabled.
         boolean enchantedBook=item!=null&&item.getType()==Material.ENCHANTED_BOOK;
         if(!enchantedBook&&offItems.contains(identifier)&&!isOrdinaryShopItem(identifier))return 0;
-        if(sell.containsKey(identifier)&&(!enchantedBook||sell.get(identifier)>0))
-            return Math.max(0,sell.get(identifier));
+        if(sell.containsKey(identifier)&&sell.get(identifier)>0)
+            return sell.get(identifier);
+        // A stale zero-value shop price should not block normal materials.
+        // Admin-only and restricted materials remain rejected by fallbackSellPrice.
+        if(sell.containsKey(identifier)&&!enchantedBook&&!isOrdinaryShopItem(identifier))
+            return 0;
         if(enchantedBook){
             if(item.getItemMeta() instanceof org.bukkit.inventory.meta.EnchantmentStorageMeta meta){
                 long price=40;
