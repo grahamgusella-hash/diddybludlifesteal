@@ -1023,6 +1023,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private void tickShardRewards(){
         boolean payout=false;
         for(Player player:Bukkit.getOnlinePlayers()){
+            try{
             UUID uuid=player.getUniqueId();
             leaderboardPlaytime.merge(uuid,1L,Long::sum);
             if(!sidebars.containsKey(uuid))initializeSidebar(player);
@@ -1052,6 +1053,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             shardSecondsRemaining.put(uuid,remaining);
             updateSidebar(player);
+            }catch(Exception ex){
+                getLogger().warning("HUD update failed for "+player.getName()+": "+ex.getMessage());
+            }
         }
         if(payout)save();
     }
