@@ -59,6 +59,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         halloweenKey=new NamespacedKey(this,"halloween_filler");
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
+        for(World world:getServer().getWorlds())setRadarOff(world);
         spawners=new PaperSpawners(this,spawnerKey);
         getServer().getPluginManager().registerEvents(this,this);
         getServer().getPluginManager().registerEvents(spawners,this);
