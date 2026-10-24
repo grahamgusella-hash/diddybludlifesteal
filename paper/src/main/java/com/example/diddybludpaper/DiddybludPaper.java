@@ -378,15 +378,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             stack.getItemMeta().getPersistentDataContainer().has(heartKey,PersistentDataType.BYTE);
     }
     private int maxHearts(Player p){
+        Long saved=leaderboardHearts.get(p.getUniqueId());
+        if(saved!=null)return (int)Math.max(1,Math.min(500,saved));
         var a=p.getAttribute(Attribute.MAX_HEALTH);
-        return a==null?20:(int)Math.round(a.getBaseValue()/2);
+        return a==null?10:Math.max(1,(int)Math.round(a.getBaseValue()/2));
     }
     private void setHearts(Player p,int value){
-        var a=p.getAttribute(Attribute.MAX_HEALTH);
-        if(a==null)return;
-        a.setBaseValue(Math.max(2,value*2));
-        leaderboardHearts.put(p.getUniqueId(),(long)Math.max(1,value));
-        p.setHealth(Math.min(p.getHealth(),a.getValue()));
+        int hearts=Math.max(1,Math.min(heartCap,value));
+        leaderboardHearts.put(p.getUniqueId(),(long)hearts);
+        var attribute=p.getAttribute(Attribute.MAX_HEALTH);
+        if(attribute==null)return;
+        attribute.setBaseValue(hearts*2.0);
+        if(!p.isDead()&&p.getHealth()>attribute.getValue())
+            p.setHealth(attribute.getValue());
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false)
     public void onHeartUse(PlayerInteractEvent event){
@@ -433,32 +437,28 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         player.sendMessage("§a❤ Heart redeemed! Maximum hearts: "+(current+1)+"/"+heartCap);
     }
     @EventHandler(priority=EventPriority.HIGHEST)
-    public void onDeath(PlayerDeathEvent e){
-        Player victim=e.getEntity();
-        Player killer=victim.getKiller();
-        int heartsBeforeDeath=maxHearts(victim);
-        leaderboardHearts.put(victim.getUniqueId(),(long)Math.max(0,heartsBeforeDeath-1));
+    public void onDeath(PlayerDeathEvent event){
+        Player victim=event.getEntity();
+        int before=maxHearts(victim);
+        int after=Math.max(1,before-1);
 
-        // A death costs one maximum heart, whether caused by PvP or something else.
-        // Bukkit cannot assign zero maximum health, so a player whose final heart
-        // is lost is banned rather than left at zero health.
-        if(heartsBeforeDeath<=1){
-            // Keep the last valid max-health value until the ban has been issued.
-            // Vanilla's ban command writes to banned-players.json persistently.
-            String victimName=victim.getName();
+        // All deaths (PvP, mobs, falling, etc.) cost one maximum heart.
+        // The last permitted total is one heart; reaching it causes a ban.
+        setHearts(victim,after);
+
+        // All deaths drop one redeemable heart, not just player kills.
+        // A heart lost in the void may be unreachable, like ordinary drops.
+        event.getDrops().add(heart(1));
+        save();
+
+        if(after<=1){
+            String name=victim.getName();
             getServer().getScheduler().runTask(this,()->{
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
-                    "ban "+victimName+" You ran out of Lifesteal hearts");
-                if(victim.isOnline())victim.kickPlayer("§cYou ran out of Lifesteal hearts.");
+                boolean banned=Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                    "ban "+name+" You reached 1 Lifesteal heart");
+                if(!banned)getLogger().warning("Could not issue /ban for "+name);
+                if(victim.isOnline())victim.kickPlayer("§cYou reached 1 Lifesteal heart.");
             });
-        }else{
-            setHearts(victim,heartsBeforeDeath-1);
-        }
-
-        // Only player kills award a redeemable Heart item. The killer does not
-        // automatically gain max health: somebody must collect and redeem it.
-        if(killer!=null&&!killer.equals(victim)){
-            e.getDrops().add(heart(1));
         }
     }
     private Inventory menu(String kind,int page,UUID owner){
@@ -1003,10 +1003,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @EventHandler(priority=EventPriority.HIGHEST)
     public void onPlayerRespawn(PlayerRespawnEvent event){
-        // The configured server spawn overrides beds, anchors and default world spawn
-        // for all deaths, including deaths in other dimensions.
-        if(serverSpawn==null||serverSpawn.getWorld()==null)return;
-        event.setRespawnLocation(serverSpawn.clone());
+        // Paper can recreate the player health attributes on respawn.
+        // Restore the saved max-hearts after the respawn is finished.
+        Player player=event.getPlayer();
+        getServer().getScheduler().runTask(this,()->{
+            if(player.isOnline())setHearts(player,maxHearts(player));
+        });
+        if(serverSpawn!=null&&serverSpawn.getWorld()!=null)
+            event.setRespawnLocation(serverSpawn.clone());
     }
     // Uses vanilla scoreboard packets: no client mod or texture pack needed.
     private Map<UUID,Long> leaderboardScores(String type){
@@ -1096,7 +1100,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @EventHandler public void onJoin(PlayerJoinEvent event){
         Player player=event.getPlayer();
-        leaderboardHearts.putIfAbsent(player.getUniqueId(),(long)maxHearts(player));
+        int savedHearts=maxHearts(player);
+        setHearts(player,savedHearts);
         leaderboardPlaytime.putIfAbsent(player.getUniqueId(),0L);
         // Let other join handlers finish first; recurring tick also repairs a
         // scoreboard replaced after this delayed first refresh.
