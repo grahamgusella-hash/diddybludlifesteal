@@ -1027,11 +1027,45 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     else p.sendMessage("§cUnable to teleport to spawn.");
                     return true;
                 }
-                case "sethome" ->{homes.put(uid,p.getLocation().clone());save();p.sendMessage("Home set.");return true;}
-                case "delhome" ->{homes.remove(uid);save();return true;}
+                case "sethome" ->{
+                    if(args.length>1){p.sendMessage("Usage: /sethome [name]");return true;}
+                    String name=args.length==0?"home":validHomeName(args[0]);
+                    Map<String,Location> saved=homes.computeIfAbsent(uid,k->new LinkedHashMap<>());
+                    if(!saved.containsKey(name)&&saved.size()>=10){
+                        p.sendMessage("You can save up to 10 homes. Use /delhome <name>.");
+                        return true;
+                    }
+                    saved.put(name,p.getLocation().clone());
+                    save();p.sendMessage("Home '"+name+"' saved.");
+                    return true;
+                }
+                case "delhome" ->{
+                    if(args.length>1){p.sendMessage("Usage: /delhome [name]");return true;}
+                    String name=args.length==0?"home":validHomeName(args[0]);
+                    Map<String,Location> saved=homes.get(uid);
+                    if(saved==null||saved.remove(name)==null){
+                        p.sendMessage("No home named '"+name+"'.");return true;
+                    }
+                    if(saved.isEmpty())homes.remove(uid);
+                    save();p.sendMessage("Deleted home '"+name+"'.");
+                    return true;
+                }
+                case "homes" ->{
+                    Map<String,Location> saved=homes.get(uid);
+                    p.sendMessage(saved==null||saved.isEmpty()?
+                        "You have no saved homes. Use /sethome <name>.":
+                        "Homes: "+String.join(", ",saved.keySet()));
+                    return true;
+                }
                 case "home" ->{
-                    Location loc=homes.get(uid);
-                    if(loc!=null&&loc.getWorld()!=null)p.teleport(loc);return true;
+                    if(args.length>1){p.sendMessage("Usage: /home [name]");return true;}
+                    String name=args.length==0?"home":validHomeName(args[0]);
+                    Map<String,Location> saved=homes.get(uid);
+                    Location loc=saved==null?null:saved.get(name);
+                    if(loc==null){p.sendMessage("No home named '"+name+"'. Use /homes.");return true;}
+                    if(loc.getWorld()==null){p.sendMessage("That home's world is unavailable.");return true;}
+                    if(p.teleport(loc.clone()))p.sendMessage("Teleported to '"+name+"'.");
+                    return true;
                 }
                 case "tpa" ->{
                     if(args.length!=1)return true;
