@@ -255,7 +255,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         assignments.forEach((id,v)->y.set("assignment."+id,v));
         y.set("off-categories",new ArrayList<>(offCategories));
         y.set("off-items",new ArrayList<>(offItems));
-        homes.forEach((id,v)->y.set("homes."+id,v));
+        for(var playerHomes:homes.entrySet()) for(var namedHome:playerHomes.getValue().entrySet())
+            y.set("homes."+playerHomes.getKey()+"."+namedHome.getKey(),namedHome.getValue());
         // Use a snapshot so inventory edits cannot mutate items while YAML is written.
         vaults.forEach((id,v)->y.set("vaults."+id,Arrays.asList(cloneItems(v))));
         auctions.forEach((id,v)->{
