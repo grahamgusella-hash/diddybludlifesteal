@@ -676,7 +676,37 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(slot>=18&&slot<27){e.setCancelled(true);
                 if(slot==26){cancelledSellMenus.add(p.getUniqueId());p.closeInventory();}
                 else if(slot==22)confirmSell(p,e.getView().getTopInventory());
-            }else if(e.isShiftClick())e.setCancelled(true);
+            }else if(e.isShiftClick()){
+                // Move shift-clicked inventory stacks into the 18 sell slots.
+                // Bukkit's default shift-move could also target GUI controls.
+                e.setCancelled(true);
+                if(slot>=27&&e.getClickedInventory()!=null){
+                    Inventory sellInventory=e.getView().getTopInventory();
+                    ItemStack clicked=e.getCurrentItem();
+                    if(clicked==null||clicked.getType().isAir())return;
+                    ItemStack remainder=clicked.clone();
+                    for(int index=0;index<18&&remainder.getAmount()>0;index++){
+                        ItemStack existing=sellInventory.getItem(index);
+                        if(existing==null||existing.getType().isAir())continue;
+                        if(!existing.isSimilar(remainder))continue;
+                        int canAdd=Math.min(remainder.getAmount(),existing.getMaxStackSize()-existing.getAmount());
+                        if(canAdd>0){
+                            existing.setAmount(existing.getAmount()+canAdd);
+                            remainder.setAmount(remainder.getAmount()-canAdd);
+                        }
+                    }
+                    for(int index=0;index<18&&remainder.getAmount()>0;index++){
+                        ItemStack existing=sellInventory.getItem(index);
+                        if(existing!=null&&!existing.getType().isAir())continue;
+                        int moved=Math.min(remainder.getAmount(),remainder.getMaxStackSize());
+                        ItemStack deposit=remainder.clone();deposit.setAmount(moved);
+                        sellInventory.setItem(index,deposit);
+                        remainder.setAmount(remainder.getAmount()-moved);
+                    }
+                    if(remainder.getAmount()<=0)e.getClickedInventory().setItem(e.getSlot(),null);
+                    else e.getClickedInventory().setItem(e.getSlot(),remainder);
+                }
+            }
             return;
         }
         e.setCancelled(true);
@@ -919,12 +949,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private void processSellItems(Player p,Inventory inv){
         long total=0;List<Integer> sold=new ArrayList<>();
         int rejected=0;
+        LinkedHashSet<String> rejectedTypes=new LinkedHashSet<>();
         for(int slot=0;slot<18;slot++){
             ItemStack item=inv.getItem(slot);
             if(item==null||item.getType().isAir())continue;
             String identifier=id(item);
             long unit=sellValueFor(item,identifier);
-            if(unit<=0){rejected++;continue;}
+            if(unit<=0){
+                rejected++;
+                if(rejectedTypes.size()<5)rejectedTypes.add(item.getType().name());
+                continue;
+            }
             try{total=Math.addExact(total,Math.multiplyExact(unit,item.getAmount()));}
             catch(ArithmeticException ex){
                 p.sendMessage("§cSale too large; no items were sold.");return;
@@ -932,7 +967,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             sold.add(slot);
         }
         if(total==0){
-            if(rejected>0)p.sendMessage("§cThose items have no sell price; they were returned.");
+            if(rejected>0)p.sendMessage("§cUnsellable: "+String.join(", ",rejectedTypes)+". Returned to inventory.");
             return;
         }
         if(funds(p.getUniqueId())>Long.MAX_VALUE-total){
@@ -943,7 +978,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         for(int slot:sold)inv.setItem(slot,null);
         p.sendMessage("§aSold "+sold.size()+" stack(s) for $"+total+".");
-        if(rejected>0)p.sendMessage("§e"+rejected+" unsellable stack(s) returned.");
+        if(rejected>0)p.sendMessage("§e"+rejected+" unsellable stack(s) returned: "+String.join(", ",rejectedTypes));
     }
     @EventHandler public void close(InventoryCloseEvent e){
         if(!(e.getPlayer() instanceof Player p))return;
