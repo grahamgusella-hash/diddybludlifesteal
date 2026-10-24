@@ -148,3 +148,9 @@ Use `/leaderboard money remove`, `/leaderboard playtime remove`, or `/leaderboar
 Player money is drawn from existing saved accounts. Hearts track maximum hearts as players join, redeem hearts, are assigned hearts, and die. **Playtime starts accumulating when this plugin version is installed**; earlier playtime is not backfilled. Offline players stay ranked based on the latest saved values. The plugin persists this data in `server-data.yml` on the normal periodic/quit/shutdown save intervals.
 
 Requires Paper 26.3 and version **0.7.0-paper**. Code is committed, but a Gradle build and real in-game test are still required before deploying to a public spawn.
+
+## 0.8.0-paper: Fixed /sell deposits returning to inventory
+
+The first 18 slots in `/sell` accept deposits. Clicking the **emerald Confirm sale** immediately sells all eligible deposited stacks. **Closing the sell GUI normally also processes the eligible sale automatically**. Clicking the **barrier Cancel** instead returns every deposited item without selling anything. Invalid or zero-value items are returned with an explanatory message; valid items are consumed only after the cash deposit succeeds. For previously configured vanilla items with a zero sell price, the normal obtainable-item fallback price is now applied.
+
+Make sure the running FalixNodes server actually has the newly built `0.8.0-paper` JAR in the Paper `plugins` directory and run `/diddyblud` to check version. Source changes are not a built/tested deployment.
