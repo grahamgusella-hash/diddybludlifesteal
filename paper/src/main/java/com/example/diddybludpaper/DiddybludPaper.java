@@ -1029,8 +1029,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             // Other plugins can replace a player's entire scoreboard; restore
             // our sidebar without resetting reward timers or recreating it.
             Scoreboard expected=sidebars.get(uuid);
-            if(expected!=null&&player.getScoreboard()!=expected)
-                player.setScoreboard(expected);
+            if(expected!=null){
+                Objective objective=expected.getObjective("diddyhud");
+                if(objective==null||objective.getDisplaySlot()!=DisplaySlot.SIDEBAR){
+                    initializeSidebar(player);
+                }else if(player.getScoreboard()!=expected){
+                    player.setScoreboard(expected);
+                }
+            }
             long remaining=shardSecondsRemaining.getOrDefault(uuid,SHARD_INTERVAL_SECONDS)-1L;
             if(remaining<=0){
                 long old=shards.getOrDefault(uuid,0L);
@@ -1075,7 +1081,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
-        if(cmd.equals("leaderboard")){
+        if(cmd.equals("leaderboard")||cmd.equals("leaderboards")){
             if(!(sender instanceof Player player)){sender.sendMessage("Use this command in-game.");return true;}
             if(!player.hasPermission("diddyblud.admin")){
                 player.sendMessage("§cOnly OPs can place leaderboards.");return true;
@@ -1097,8 +1103,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         if(cmd.equals("sidebar")||cmd.equals("scoreboard")){
             if(!(sender instanceof Player player)){sender.sendMessage("Only players have a sidebar.");return true;}
-            initializeSidebar(player);
-            player.sendMessage("§aDiddyblud sidebar restored.");
+            try{
+                initializeSidebar(player);
+                if(!sidebars.containsKey(player.getUniqueId())){
+                    player.sendMessage("§cCannot show sidebar: scoreboard manager unavailable.");
+                }else{
+                    player.sendMessage("§aDiddyblud sidebar restored.");
+                }
+            }catch(Exception ex){
+                getLogger().warning("Sidebar failed for "+player.getName()+": "+ex.getMessage());
+                player.sendMessage("§cSidebar error: "+ex.getClass().getSimpleName()+" — check server console.");
+            }
             return true;
         }
         if(cmd.equals("diddyblud")){
