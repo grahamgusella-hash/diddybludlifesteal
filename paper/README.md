@@ -154,3 +154,13 @@ Requires Paper 26.3 and version **0.7.0-paper**. Code is committed, but a Gradle
 The first 18 slots in `/sell` accept deposits. Clicking the **emerald Confirm sale** immediately sells all eligible deposited stacks. **Closing the sell GUI normally also processes the eligible sale automatically**. Clicking the **barrier Cancel** instead returns every deposited item without selling anything. Invalid or zero-value items are returned with an explanatory message; valid items are consumed only after the cash deposit succeeds. For previously configured vanilla items with a zero sell price, the normal obtainable-item fallback price is now applied.
 
 Make sure the running FalixNodes server actually has the newly built `0.8.0-paper` JAR in the Paper `plugins` directory and run `/diddyblud` to check version. Source changes are not a built/tested deployment.
+
+## 0.8.3-paper: Lifesteal death rules corrected
+
+- Every player death (PvP or environmental) **reduces maximum hearts by 1**.
+- Every player death **drops one tagged redeemable Heart item**, regardless of the killer. Right-click the Heart to redeem it.
+- A death which reduces the victim to **1 maximum heart** triggers the permanent vanilla `/ban` command and kicks the victim. Players at two hearts can survive until their next death; no automatic ban when holding one heart through administrative adjustments.
+- Max hearts are persisted under `leaderboard-hearts` in `server-data.yml`, and re-applied on player join and after respawn to prevent health resetting.
+- An OP may set a specific player's heart count with `/hearts set <player> <amount>`. Check `/version DiddybludLifesteal` shows `0.8.3-paper` after installation.
+
+**Note:** These changes require a new Paper JAR build and have not been validated through in-game testing.
