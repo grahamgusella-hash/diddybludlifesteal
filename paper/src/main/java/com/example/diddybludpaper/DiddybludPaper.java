@@ -334,9 +334,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 String key="ENCHANT:"+ench.getKey().getKey();
                 if(buy.containsKey(key))return key;
             }
-            return null;
+            // Unlisted, multi-enchantment and unusual enchanted books all
+            // have a sellable vanilla ENCHANTED_BOOK fallback.
+            return "ENCHANTED_BOOK";
         }
         return stack.getType().name();
+    }
+    private boolean isOrdinaryShopItem(String identifier){
+        if(identifier==null||identifier.equals("HEART")||identifier.startsWith("ENCHANT:"))return false;
+        Material material=Material.matchMaterial(identifier);
+        return material!=null&&material.isItem();
     }
     public ItemStack heart(int n){
         ItemStack s=icon(Material.NETHER_STAR,"§c❤ Heart");
@@ -526,7 +533,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(!buy.containsKey(id))continue;
             ItemStack s=shopItem(id);
             if(s==null)continue;
-            ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)?"§cDISABLED ":"")+id+
+            ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)&&!isOrdinaryShopItem(id)?"§cDISABLED ":"")+id+
                " §aBuy $"+buy.get(id)+" §eSell $"+sell.getOrDefault(id,0L));s.setItemMeta(meta);inv.setItem(i,s);
         }
         inv.setItem(18,icon(Material.ARROW,"Back"));
@@ -697,12 +704,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             int at=h.page*18+slot;if(at>=ids.size())return;
             String id=ids.get(at);
             if(admin){
-                if(e.isShiftClick()){if(!offItems.add(id))offItems.remove(id);}
+                if(e.isShiftClick()){
+                    if(isOrdinaryShopItem(id)){p.sendMessage("§eNormal Minecraft items cannot be disabled.");return;}
+                    if(!offItems.add(id))offItems.remove(id);
+                }
                 else if(e.isLeftClick())buy.put(id,buy.getOrDefault(id,0L)+100L);
                 else if(e.isRightClick())sell.put(id,sell.getOrDefault(id,0L)+10L);
                 save();openCategory(p,category,h.page,true);return;
             }
-            if(offItems.contains(id)){p.sendMessage("§cItem disabled.");return;}
+            if(offItems.contains(id)&&!isOrdinaryShopItem(id)){p.sendMessage("§cItem disabled.");return;}
             if(e.isLeftClick()){
                 if(!charge(p.getUniqueId(),buy.getOrDefault(id,0L))){p.sendMessage("§cNot enough money.");return;}
                 ItemStack s=shopItem(id);
@@ -834,8 +844,20 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         return 8; // common nonrestricted obtainable items
     }
     private long sellValueFor(ItemStack item,String identifier){
-        if(identifier==null||offItems.contains(identifier))return 0;
+        if(identifier==null)return 0;
+        // Ordinary vanilla items must remain sellable even when previously
+        // disabled via the shop editor. Only special shop items can be disabled.
+        if(offItems.contains(identifier)&&!isOrdinaryShopItem(identifier))return 0;
         if(sell.containsKey(identifier))return Math.max(0,sell.get(identifier));
+        if(item!=null&&item.getType()==Material.ENCHANTED_BOOK){
+            if(item.getItemMeta() instanceof org.bukkit.inventory.meta.EnchantmentStorageMeta meta){
+                long price=40;
+                for(int level:meta.getStoredEnchants().values())
+                    price+=Math.max(1,level)*35L;
+                return Math.min(2000L,price);
+            }
+            return 40;
+        }
         return fallbackSellPrice(item);
     }
     private void confirmSell(Player p,Inventory inv){
