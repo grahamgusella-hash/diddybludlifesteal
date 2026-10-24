@@ -30,6 +30,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<String,String> assignments=new LinkedHashMap<>();
     private final Map<String,Material> categories=new LinkedHashMap<>();
     private final Set<String> offCategories=new HashSet<>(),offItems=new HashSet<>();
+    private final Set<String> deletedShopListings=new HashSet<>();
     private final Map<UUID,Map<String,Location>> homes=new HashMap<>();
     private final Map<UUID,UUID> requests=new HashMap<>();
     private final Map<String,ItemStack[]> vaults=new HashMap<>();
@@ -204,6 +205,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         offItems.addAll(y.getStringList("off-items"));
         offCategories.clear(); // Re-enable previously disabled normal shop categories.
         offItems.removeIf(this::isOrdinaryShopItem);
+        deletedShopListings.addAll(y.getStringList("deleted-shop-listings"));
+        for(String removed:deletedShopListings){
+            assignments.remove(removed);
+            buy.remove(removed);
+            sell.remove(removed);
+            offItems.remove(removed);
+        }
         ConfigurationSection hs=y.getConfigurationSection("homes");
         if(hs!=null)for(String playerId:hs.getKeys(false)){
             UUID playerIdParsed;
@@ -258,6 +266,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         assignments.forEach((id,v)->y.set("assignment."+id,v));
         y.set("off-categories",new ArrayList<>(offCategories));
         y.set("off-items",new ArrayList<>(offItems));
+        y.set("deleted-shop-listings",new ArrayList<>(deletedShopListings));
         for(var playerHomes:homes.entrySet()) for(var namedHome:playerHomes.getValue().entrySet())
             y.set("homes."+playerHomes.getKey()+"."+namedHome.getKey(),namedHome.getValue());
         // Use a snapshot so inventory edits cannot mutate items while YAML is written.
@@ -536,7 +545,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             ItemStack s=shopItem(id);
             if(s==null)continue;
             ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)&&!isOrdinaryShopItem(id)?"§cDISABLED ":"")+id+
-               " §aBuy $"+buy.get(id)+" §eSell $"+sell.getOrDefault(id,0L));s.setItemMeta(meta);inv.setItem(i,s);
+               " §aBuy $"+buy.get(id)+" §eSell $"+sell.getOrDefault(id,0L));
+            if(admin)meta.setLore(List.of("§eLeft-click: +$100 buy price","§eRight-click: +$10 sell price","§cShift + Right-click: DELETE listing","§7Shift + Left-click: toggle special item"));
+            s.setItemMeta(meta);inv.setItem(i,s);
         }
         inv.setItem(18,icon(Material.ARROW,"Back"));
         inv.setItem(19,icon(Material.PAPER,"Previous"));
@@ -699,6 +710,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(slot==22&&admin){
                 ItemStack held=p.getInventory().getItemInMainHand();
                 String id=id(held);if(id==null){p.sendMessage("§cHold an eligible item.");return;}
+                deletedShopListings.remove(id);
                 buy.putIfAbsent(id,100L);sell.putIfAbsent(id,10L);assignments.put(id,category);
                 save();openCategory(p,category,h.page,true);return;
             }
@@ -707,6 +719,20 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             int at=h.page*18+slot;if(at>=ids.size())return;
             String id=ids.get(at);
             if(admin){
+                if(e.isShiftClick()&&e.isRightClick()){
+                    // Delete the listing, not any player's actual item.
+                    // A tombstone prevents defaults() from restoring it on restart.
+                    deletedShopListings.add(id);
+                    assignments.remove(id);
+                    buy.remove(id);
+                    sell.remove(id);
+                    offItems.remove(id);
+                    save();
+                    p.sendMessage("§aRemoved "+id+" from /shop. Hold it and use the add button to restore it.");
+                    int remaining=(int)assignments.values().stream().filter(category::equals).count();
+                    openCategory(p,category,Math.max(0,Math.min(h.page,(Math.max(0,remaining-1))/18)),true);
+                    return;
+                }
                 if(e.isShiftClick()){
                     if(isOrdinaryShopItem(id)){p.sendMessage("§eNormal Minecraft items cannot be disabled.");return;}
                     if(!offItems.add(id))offItems.remove(id);
@@ -1097,6 +1123,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     if(args.length==3&&args[0].equalsIgnoreCase("price")&&p.hasPermission("diddyblud.admin")){
                         String id=id(p.getInventory().getItemInMainHand());
                         if(id==null){p.sendMessage("Hold the item.");return true;}
+                        deletedShopListings.remove(id);
                         buy.put(id,parseAmount(args[1]));sell.put(id,parseAmount(args[2]));
                         assignments.putIfAbsent(id,"storage");save();p.sendMessage("Saved buy/sell for "+id);return true;
                     }
