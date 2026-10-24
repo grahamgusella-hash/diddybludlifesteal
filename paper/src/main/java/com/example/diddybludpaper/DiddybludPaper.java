@@ -1094,10 +1094,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 return true;
             }
             String type=args[0].toLowerCase(Locale.ROOT);
-            if(args.length==2){
-                player.sendMessage(leaderboards.remove(type)?"§aLeaderboard removed.":"§cNo placed leaderboard of that type.");
-            }else{
-                leaderboards.place(player,type);
+            try{
+                if(leaderboards==null){
+                    player.sendMessage("§cLeaderboards are not initialized. Check startup console errors.");
+                }else if(args.length==2){
+                    player.sendMessage(leaderboards.remove(type)?"§aLeaderboard removed.":"§cNo placed leaderboard of that type.");
+                }else{
+                    leaderboards.place(player,type);
+                }
+            }catch(Exception ex){
+                getLogger().warning("Leaderboard "+type+" failed for "+player.getName()+": "+ex);
+                player.sendMessage("§cLeaderboard error: "+ex.getClass().getSimpleName()+" — check console.");
             }
             return true;
         }
