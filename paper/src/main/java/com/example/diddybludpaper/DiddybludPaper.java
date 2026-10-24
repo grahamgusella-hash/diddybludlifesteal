@@ -947,6 +947,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         for(Player player:Bukkit.getOnlinePlayers()){
             UUID uuid=player.getUniqueId();
             if(!sidebars.containsKey(uuid))initializeSidebar(player);
+            // Other plugins can replace a player's entire scoreboard; restore
+            // our sidebar without resetting reward timers or recreating it.
+            Scoreboard expected=sidebars.get(uuid);
+            if(expected!=null&&player.getScoreboard()!=expected)
+                player.setScoreboard(expected);
             long remaining=shardSecondsRemaining.getOrDefault(uuid,SHARD_INTERVAL_SECONDS)-1L;
             if(remaining<=0){
                 long old=shards.getOrDefault(uuid,0L);
@@ -966,7 +971,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(payout)save();
     }
     @EventHandler public void onJoin(PlayerJoinEvent event){
-        initializeSidebar(event.getPlayer());
+        Player player=event.getPlayer();
+        // Let other join handlers finish first; recurring tick also repairs a
+        // scoreboard replaced after this delayed first refresh.
+        getServer().getScheduler().runTask(this,()->{
+            if(player.isOnline())initializeSidebar(player);
+        });
     }
     @EventHandler public void onQuit(PlayerQuitEvent e){
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
@@ -984,6 +994,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("sidebar")||cmd.equals("scoreboard")){
+            if(!(sender instanceof Player player)){sender.sendMessage("Only players have a sidebar.");return true;}
+            initializeSidebar(player);
+            player.sendMessage("§aDiddyblud sidebar restored.");
+            return true;
+        }
         if(cmd.equals("diddyblud")){
             sender.sendMessage("§6Diddyblud Lifesteal §fPaper §a"+getDescription().getVersion());
             sender.sendMessage("§7Features: Heart right-click, Halloween GUIs, scoreboard, and shard rewards.");
