@@ -23,7 +23,8 @@ commands:
   spawn: {description: Teleport to the server-wide spawn location}
   sethome: {description: Set home}
   delhome: {description: Delete home}
-  home: {description: Go home}
+  home: {description: Visit a named home}
+  homes: {description: List your saved homes}
   tpa: {description: Teleport request}
   tpaccept: {description: Accept teleport request}
   tpdeny: {description: Deny teleport request}
