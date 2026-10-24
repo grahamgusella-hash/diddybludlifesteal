@@ -106,3 +106,14 @@ If GitHub commits don't appear in-game, the **running server may still be using 
 7. Try `/shop` and look for Jack o'Lantern corners, orange/black glass, and cobweb accents. Decorations are protected against accidental menu purchases/clicks.
 
 Neither these source changes nor the version bump prove the 26.3 project compiles and runs. **A successful 0.3.0-paper build and in-game version check are both required.**
+
+## Named homes, locator bar, and broader item selling (0.4.0-paper)
+
+- Players may store **up to 10 named homes** using `/sethome <name>`, travel using `/home <name>`, list them using `/homes`, and delete them using `/delhome <name>`. A home called `home` is the default if no argument is specified. Reusing a name replaces its saved location.
+- Existing old-format single-home records are migrated in memory as the default home. Named home locations are saved to `server-data.yml` across restarts. Names support letters, numbers, underscore and hyphen, up to 24 characters.
+- The Minecraft player **locator bar radar** is disabled in every world on plugin startup and on world load using the locator game rule. **The separate right-side money/shards scoreboard remains enabled.**
+- The `/sell` deposit GUI uses a **conservative fallback payout** for ordinary vanilla obtainable items that have no configured sell price, so players can sell many more blocks, drops, materials, food and equipment than before. Explicit OP-configured prices always win. Rare resources pay more and easily farmed blocks pay less.
+- Deliberate safeguards: admin/debug/unobtainable materials, unique virtual spawners, and nonempty shulker boxes cannot be sold using the fallback. Unrecognized enchanted book variants are also not currently sellable. This is *broad selling*, not an unconditional promise that every item on any modded server is accepted.
+- After deployment, run `/diddyblud` to confirm that it reports **0.4.0-paper**. Build via the `paper/` Gradle project or GitHub Actions and install only the newest JAR in Paper `plugins/`.
+
+Changes are committed as source but **not yet verified by compilation or server gameplay**. Test the updated JAR on a backup server before moving your live economy over.
