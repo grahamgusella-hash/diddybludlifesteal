@@ -202,6 +202,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(as!=null)for(String k:as.getKeys(false))assignments.put(k,as.getString(k));
         offCategories.addAll(y.getStringList("off-categories"));
         offItems.addAll(y.getStringList("off-items"));
+        offCategories.clear(); // Re-enable previously disabled normal shop categories.
+        offItems.removeIf(this::isOrdinaryShopItem);
         ConfigurationSection hs=y.getConfigurationSection("homes");
         if(hs!=null)for(String playerId:hs.getKeys(false)){
             UUID playerIdParsed;
@@ -680,9 +682,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(at<0||at>=cats.size())return;
             String cat=cats.get(at);
             if(admin&&e.isShiftClick()){
-                if(!offCategories.add(cat))offCategories.remove(cat);save();openShop(p,h.page,true);return;
+                p.sendMessage("§eShop categories remain enabled so players can trade normal items.");
+                openShop(p,h.page,true);return;
             }
-            if(offCategories.contains(cat)&&!admin){p.sendMessage("§cCategory disabled.");return;}
+            // Every ordinary shop category remains open to all players.
             if(cat.equals("shards")||cat.equals("spawners"))openList(p,cat,0);
             else openCategory(p,cat,0,admin);
             return;
