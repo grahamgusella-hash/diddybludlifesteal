@@ -294,6 +294,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             return v;
         }catch(ArithmeticException ex){throw new IllegalArgumentException("Invalid amount/overflow.");}
     }
+    private static String validHomeName(String raw){
+        String name=raw.toLowerCase(Locale.ROOT);
+        if(!name.matches("[a-z0-9_-]{1,24}"))
+            throw new IllegalArgumentException("Home name: 1-24 letters, digits, _ or -.");
+        return name;
+    }
     private static long parseSetAmount(String input){
         // Setting a balance to zero must be permitted; giving/paying zero stays invalid.
         if("0".equals(input))return 0L;
