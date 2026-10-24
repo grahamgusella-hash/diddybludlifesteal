@@ -202,9 +202,23 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         offCategories.addAll(y.getStringList("off-categories"));
         offItems.addAll(y.getStringList("off-items"));
         ConfigurationSection hs=y.getConfigurationSection("homes");
-        if(hs!=null)for(String k:hs.getKeys(false)){
-            Location loc=hs.getLocation(k);
-            if(loc!=null)try{homes.put(UUID.fromString(k),loc);}catch(Exception ignored){}
+        if(hs!=null)for(String playerId:hs.getKeys(false)){
+            UUID playerIdParsed;
+            try{playerIdParsed=UUID.fromString(playerId);}
+            catch(IllegalArgumentException ignored){continue;}
+            Object oldValue=hs.get(playerId);
+            if(oldValue instanceof Location oldHome){
+                homes.computeIfAbsent(playerIdParsed,id->new LinkedHashMap<>())
+                    .put("home",oldHome.clone());
+                continue;
+            }
+            ConfigurationSection personal=hs.getConfigurationSection(playerId);
+            if(personal==null)continue;
+            Map<String,Location> named=homes.computeIfAbsent(playerIdParsed,id->new LinkedHashMap<>());
+            for(String name:personal.getKeys(false)){
+                Location location=personal.getLocation(name);
+                if(location!=null)named.put(name.toLowerCase(Locale.ROOT),location.clone());
+            }
         }
         ConfigurationSection vs=y.getConfigurationSection("vaults");
         if(vs!=null)for(String k:vs.getKeys(false)){
