@@ -1,10 +1,11 @@
 name: DiddybludLifesteal
-version: 0.6.0-paper
+version: 0.7.0-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
 commands:
   diddyblud: {description: Plugin information}
+  leaderboard: {description: Place or remove a public top-10 hologram, permission: diddyblud.admin, usage: /leaderboard <money|playtime|hearts> [remove]}
   shop: {description: Open shop categories}
   sell: {description: Open sell deposit GUI, or OP price edit}
   bal: {description: Check money}
