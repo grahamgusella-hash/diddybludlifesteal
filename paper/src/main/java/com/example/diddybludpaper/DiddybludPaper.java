@@ -784,12 +784,66 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             save();openList(p,type,h.page);
         }
     }
+    /**
+     * Base payouts for vanilla obtainable goods not explicitly priced by an OP.
+     * Specific configured sell prices always override these default categories.
+     * Selling is deliberately less lucrative than buying to prevent shop loops.
+     */
+    private long fallbackSellPrice(ItemStack stack){
+        if(stack==null||stack.getType().isAir())return 0;
+        Material material=stack.getType();
+        String name=material.name();
+        if(!material.isItem()||name.startsWith("LEGACY_")||
+            name.contains("SPAWN_EGG")||name.contains("COMMAND_BLOCK")||
+            name.contains("STRUCTURE_")||name.contains("JIGSAW")||
+            name.contains("BARRIER")||name.contains("DEBUG_STICK")||
+            name.contains("LIGHT")||name.contains("KNOWLEDGE_BOOK")||
+            name.contains("BEDROCK")||name.contains("END_PORTAL")||
+            name.contains("SPAWNER")||name.contains("REINFORCED_DEEPSLATE"))
+            return 0;
+        // Avoid paying for potentially valuable nested inventory contents as one item.
+        if(stack.getItemMeta() instanceof org.bukkit.inventory.meta.BlockStateMeta state &&
+            state.getBlockState() instanceof org.bukkit.block.ShulkerBox shulker &&
+            !shulker.getInventory().isEmpty())return 0;
+
+        if(name.contains("NETHERITE")||name.equals("ELYTRA"))return 2500;
+        if(name.equals("DIAMOND")||name.startsWith("DIAMOND_"))return 650;
+        if(name.contains("EMERALD"))return 250;
+        if(name.contains("ANCIENT_DEBRIS"))return 850;
+        if(name.contains("TOTEM_OF_UNDYING"))return 5000;
+        if(name.contains("ENCHANTED_GOLDEN_APPLE"))return 7000;
+        if(name.contains("GOLDEN_APPLE"))return 250;
+        if(name.contains("BEACON")||name.contains("NETHER_STAR"))return 2500;
+        if(name.contains("SHULKER"))return 1200;
+        if(name.contains("GHAST_TEAR")||name.contains("WITHER_SKELETON_SKULL"))return 450;
+        if(name.contains("IRON")||name.contains("GOLD"))return 60;
+        if(name.contains("LAPIS")||name.contains("REDSTONE")||name.contains("COPPER"))return 15;
+        if(name.contains("ENDER_PEARL")||name.contains("BLAZE_ROD")||name.contains("GUNPOWDER"))return 12;
+        if(name.contains("OBSIDIAN"))return 35;
+        if(name.contains("BOOK")||name.contains("POTION"))return 20;
+        if(name.contains("SWORD")||name.contains("PICKAXE")||name.contains("AXE")||
+            name.contains("SHOVEL")||name.contains("HOE")||
+            name.contains("HELMET")||name.contains("CHESTPLATE")||
+            name.contains("LEGGINGS")||name.contains("BOOTS"))return 45;
+        if(name.contains("ORE"))return 35;
+        if(name.contains("LOG")||name.contains("STEM")||name.contains("HYPHAE"))return 12;
+        if(name.contains("PLANKS")||name.contains("STONE")||name.contains("BRICKS"))return 5;
+        if(name.contains("FOOD")||name.contains("COOKED")||name.contains("BREAD"))return 10;
+        if(name.contains("SEEDS")||name.contains("LEAVES")||name.equals("DIRT")||
+            name.contains("SAND")||name.contains("GRAVEL")||name.contains("COBBLESTONE"))return 2;
+        return 8; // common nonrestricted obtainable items
+    }
+    private long sellValueFor(ItemStack item,String identifier){
+        if(identifier==null||offItems.contains(identifier))return 0;
+        if(sell.containsKey(identifier))return Math.max(0,sell.get(identifier));
+        return fallbackSellPrice(item);
+    }
     private void confirmSell(Player p,Inventory inv){
         long total=0;List<Integer> sold=new ArrayList<>();
         for(int i=0;i<18;i++){
             ItemStack s=inv.getItem(i);String id=id(s);
-            if(id==null||!buy.containsKey(id)||offItems.contains(id))continue;
-            long unit=sell.getOrDefault(id,0L);if(unit<=0)continue;
+            long unit=sellValueFor(s,id);
+            if(unit<=0)continue;
             try{total=Math.addExact(total,Math.multiplyExact(unit,s.getAmount()));}
             catch(ArithmeticException ex){p.sendMessage("§cSale too large.");return;}
             sold.add(i);
