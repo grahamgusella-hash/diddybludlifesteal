@@ -39,6 +39,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<Integer,Listing> auctions=new LinkedHashMap<>();
     private final Map<Integer,Order> orders=new LinkedHashMap<>();
     private final Map<UUID,Integer> sellTransactions=new HashMap<>();
+    private final Set<UUID> cancelledSellMenus=new HashSet<>();
     // Online playtime in seconds until the next automatic +10 shard reward.
     // Remaining time is saved so logging out or restarting cannot reset the clock.
     private static final long SHARD_INTERVAL_SECONDS=30L*60L;
@@ -582,6 +583,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         return m==null?null:new ItemStack(m);
     }
     private void openSell(Player p){
+        cancelledSellMenus.remove(p.getUniqueId());
         Inventory inv=menu("sell",0,p.getUniqueId());
         inv.setItem(22,icon(Material.EMERALD,"CONFIRM sale"));
         inv.setItem(26,icon(Material.BARRIER,"CANCEL — return items"));
@@ -672,7 +674,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(type.startsWith("vault:"))return;
         if(type.equals("sell")){
             if(slot>=18&&slot<27){e.setCancelled(true);
-                if(slot==26)p.closeInventory();
+                if(slot==26){cancelledSellMenus.add(p.getUniqueId());p.closeInventory();}
                 else if(slot==22)confirmSell(p,e.getView().getTopInventory());
             }else if(e.isShiftClick())e.setCancelled(true);
             return;
@@ -903,25 +905,50 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         return fallbackSellPrice(item);
     }
     private void confirmSell(Player p,Inventory inv){
-        long total=0;List<Integer> sold=new ArrayList<>();
-        for(int i=0;i<18;i++){
-            ItemStack s=inv.getItem(i);String id=id(s);
-            long unit=sellValueFor(s,id);
-            if(unit<=0)continue;
-            try{total=Math.addExact(total,Math.multiplyExact(unit,s.getAmount()));}
-            catch(ArithmeticException ex){p.sendMessage("§cSale too large.");return;}
-            sold.add(i);
-        }
-        if(total==0){p.sendMessage("§cNo eligible items.");return;}
-        if(funds(p.getUniqueId())>Long.MAX_VALUE-total){p.sendMessage("§cBalance limit.");return;}
-        for(int slot:sold)inv.setItem(slot,null);
-        credit(p.getUniqueId(),total);p.sendMessage("§aSold items for $"+total);
+        processSellItems(p,inv);
         p.closeInventory();
+    }
+    /**
+     * Consume only the eligible contents after funds are verified. Items with
+     * no sale value stay in the inventory and are returned on close.
+     */
+    private void processSellItems(Player p,Inventory inv){
+        long total=0;List<Integer> sold=new ArrayList<>();
+        int rejected=0;
+        for(int slot=0;slot<18;slot++){
+            ItemStack item=inv.getItem(slot);
+            if(item==null||item.getType().isAir())continue;
+            String identifier=id(item);
+            long unit=sellValueFor(item,identifier);
+            if(unit<=0){rejected++;continue;}
+            try{total=Math.addExact(total,Math.multiplyExact(unit,item.getAmount()));}
+            catch(ArithmeticException ex){
+                p.sendMessage("§cSale too large; no items were sold.");return;
+            }
+            sold.add(slot);
+        }
+        if(total==0){
+            if(rejected>0)p.sendMessage("§cThose items have no sell price; they were returned.");
+            return;
+        }
+        if(funds(p.getUniqueId())>Long.MAX_VALUE-total){
+            p.sendMessage("§cBalance limit reached; no items were sold.");return;
+        }
+        if(!credit(p.getUniqueId(),total)){
+            p.sendMessage("§cCould not deposit sale proceeds; items were returned.");return;
+        }
+        for(int slot:sold)inv.setItem(slot,null);
+        p.sendMessage("§aSold "+sold.size()+" stack(s) for $"+total+".");
+        if(rejected>0)p.sendMessage("§e"+rejected+" unsellable stack(s) returned.");
     }
     @EventHandler public void close(InventoryCloseEvent e){
         if(!(e.getPlayer() instanceof Player p))return;
         if(!(e.getInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.equals("sell")){
+            // An ordinary close also sells accepted items; the Cancel button
+            // deliberately bypasses sale and returns the full inventory.
+            if(!cancelledSellMenus.remove(p.getUniqueId()))
+                processSellItems(p,e.getInventory());
             for(int i=0;i<18;i++){
                 ItemStack s=e.getInventory().getItem(i);
                 if(s!=null&&!s.getType().isAir()){
