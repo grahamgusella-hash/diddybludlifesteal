@@ -132,3 +132,19 @@ Source changes need compilation and server testing before being considered verif
 An OP opens `/shop`, clicks **Admin settings**, chooses a category and **Shift + right-clicks** a product to **delete it from the shop**. The item is removed from that category and its configured shop buy/sell prices; existing items in players' inventories are unaffected. The deletion survives server restarts, including for original starter listings. The editor displays its controls in item lore.
 
 To restore a deleted listing, hold the matching item and use **Add held item to category** in the category editor, then adjust prices as desired. Ordinary vanilla items can still be sold using the general `/sell` fallback pricing if removed from a *shop buy listing*; deleting a listing does not ban the material from the economy.
+
+## 0.7.0-paper: Public hologram leaderboards
+
+OPs can stand at their desired spawn location and place **three independent, public top-10 holograms** with:
+
+- `/leaderboard money` — highest saved money balances
+- `/leaderboard playtime` — longest accumulated online time
+- `/leaderboard hearts` — highest maximum heart counts
+
+Each command **places or moves** its leaderboard about 2.6 blocks above the OP's feet. All nearby players can see the floating text without a resource pack. Ranks refresh every **20 seconds**. The three locations are saved to `plugins/DiddybludLifesteal/leaderboards.yml` and rebuilt when the relevant world chunk is loaded after a restart. No world chunks are permanently forced to stay loaded.
+
+Use `/leaderboard money remove`, `/leaderboard playtime remove`, or `/leaderboard hearts remove` to remove a placed hologram.
+
+Player money is drawn from existing saved accounts. Hearts track maximum hearts as players join, redeem hearts, are assigned hearts, and die. **Playtime starts accumulating when this plugin version is installed**; earlier playtime is not backfilled. Offline players stay ranked based on the latest saved values. The plugin persists this data in `server-data.yml` on the normal periodic/quit/shutdown save intervals.
+
+Requires Paper 26.3 and version **0.7.0-paper**. Code is committed, but a Gradle build and real in-game test are still required before deploying to a public spawn.
