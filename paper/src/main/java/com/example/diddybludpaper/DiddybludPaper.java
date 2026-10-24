@@ -27,6 +27,7 @@ import java.util.*;
 public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> cash=new HashMap<>(),shards=new HashMap<>();
     private final Map<UUID,Long> leaderboardPlaytime=new HashMap<>(),leaderboardHearts=new HashMap<>();
+    private final Set<UUID> lifeLossProcessed=new HashSet<>();
     private LeaderboardHolograms leaderboards;
     private final Map<String,Long> buy=new LinkedHashMap<>(),sell=new LinkedHashMap<>(),shardPrices=new LinkedHashMap<>();
     private final Map<String,String> assignments=new LinkedHashMap<>();
@@ -388,9 +389,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         leaderboardHearts.put(p.getUniqueId(),(long)hearts);
         var attribute=p.getAttribute(Attribute.MAX_HEALTH);
         if(attribute==null)return;
-        attribute.setBaseValue(hearts*2.0);
-        if(!p.isDead()&&p.getHealth()>attribute.getValue())
-            p.setHealth(attribute.getValue());
+        // Update the actual Minecraft max-health attribute. This is what
+        // determines the visible heart bar, not the tracked leaderboard value.
+        if(!p.isDead()){
+            attribute.setBaseValue(hearts*2.0);
+            if(p.getHealth()>attribute.getValue())
+                p.setHealth(attribute.getValue());
+        }
     }
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=false)
     public void onHeartUse(PlayerInteractEvent event){
@@ -439,12 +444,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler(priority=EventPriority.HIGHEST)
     public void onDeath(PlayerDeathEvent event){
         Player victim=event.getEntity();
+        // Duplicate death callbacks in the same life must never cost hearts twice.
+        if(!lifeLossProcessed.add(victim.getUniqueId()))return;
         int before=maxHearts(victim);
         int after=Math.max(1,before-1);
 
         // All deaths (PvP, mobs, falling, etc.) cost one maximum heart.
         // The last permitted total is one heart; reaching it causes a ban.
         setHearts(victim,after);
+        victim.sendMessage("§c§l-1 Heart! §7Remaining maximum hearts: §f"+after);
 
         // All deaths drop one redeemable heart, not just player kills.
         // A heart lost in the void may be unreachable, like ordinary drops.
@@ -1006,9 +1014,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Paper can recreate the player health attributes on respawn.
         // Restore the saved max-hearts after the respawn is finished.
         Player player=event.getPlayer();
-        getServer().getScheduler().runTask(this,()->{
-            if(player.isOnline())setHearts(player,maxHearts(player));
-        });
+        getServer().getScheduler().runTaskLater(this,()->{
+            lifeLossProcessed.remove(player.getUniqueId());
+            if(player.isOnline()){
+                setHearts(player,maxHearts(player));
+                player.sendMessage("§eMaximum hearts: "+maxHearts(player));
+            }
+        },2L);
         if(serverSpawn!=null&&serverSpawn.getWorld()!=null)
             event.setRespawnLocation(serverSpawn.clone());
     }
@@ -1065,6 +1077,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             try{
             UUID uuid=player.getUniqueId();
             leaderboardPlaytime.merge(uuid,1L,Long::sum);
+            // Respawn, dimension changes or other plugins can reset max health
+            // to 20 HP. Reapply saved Lifesteal hearts without changing count.
+            var maxAttribute=player.getAttribute(Attribute.MAX_HEALTH);
+            double expectedHealth=maxHearts(player)*2.0;
+            if(maxAttribute!=null&&!player.isDead()&&
+                Math.abs(maxAttribute.getBaseValue()-expectedHealth)>0.01)
+                setHearts(player,maxHearts(player));
             if(!sidebars.containsKey(uuid))initializeSidebar(player);
             // Other plugins can replace a player's entire scoreboard; restore
             // our sidebar without resetting reward timers or recreating it.
@@ -1112,6 +1131,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onQuit(PlayerQuitEvent e){
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
         sidebars.remove(e.getPlayer().getUniqueId());
+        lifeLossProcessed.remove(e.getPlayer().getUniqueId());
         save();
     }
     @EventHandler public void onDrag(InventoryDragEvent e){
