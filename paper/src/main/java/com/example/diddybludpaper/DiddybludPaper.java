@@ -295,6 +295,18 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             return v;
         }catch(ArithmeticException ex){throw new IllegalArgumentException("Invalid amount/overflow.");}
     }
+    private void setRadarOff(World world){
+        // Minecraft 26.3 locator bar is not the right-hand economy scoreboard.
+        // Disable this game rule in every dimension and newly loaded world.
+        try{
+            world.setGameRule(GameRule.LOCATOR_BAR,Boolean.FALSE);
+        }catch(Exception ex){
+            getLogger().warning("Unable to disable locator bar: "+ex.getMessage());
+        }
+    }
+    @EventHandler public void whenWorldLoads(org.bukkit.event.world.WorldLoadEvent event){
+        setRadarOff(event.getWorld());
+    }
     private static String validHomeName(String raw){
         String name=raw.toLowerCase(Locale.ROOT);
         if(!name.matches("[a-z0-9_-]{1,24}"))
