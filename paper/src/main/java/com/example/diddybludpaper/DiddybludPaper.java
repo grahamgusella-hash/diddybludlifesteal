@@ -850,9 +850,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(identifier==null)return 0;
         // Ordinary vanilla items must remain sellable even when previously
         // disabled via the shop editor. Only special shop items can be disabled.
-        if(offItems.contains(identifier)&&!isOrdinaryShopItem(identifier))return 0;
-        if(sell.containsKey(identifier))return Math.max(0,sell.get(identifier));
-        if(item!=null&&item.getType()==Material.ENCHANTED_BOOK){
+        boolean enchantedBook=item!=null&&item.getType()==Material.ENCHANTED_BOOK;
+        if(!enchantedBook&&offItems.contains(identifier)&&!isOrdinaryShopItem(identifier))return 0;
+        if(sell.containsKey(identifier)&&(!enchantedBook||sell.get(identifier)>0))
+            return Math.max(0,sell.get(identifier));
+        if(enchantedBook){
             if(item.getItemMeta() instanceof org.bukkit.inventory.meta.EnchantmentStorageMeta meta){
                 long price=40;
                 for(int level:meta.getStoredEnchants().values())
