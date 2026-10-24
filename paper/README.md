@@ -117,3 +117,12 @@ Neither these source changes nor the version bump prove the 26.3 project compile
 - After deployment, run `/diddyblud` to confirm that it reports **0.4.0-paper**. Build via the `paper/` Gradle project or GitHub Actions and install only the newest JAR in Paper `plugins/`.
 
 Changes are committed as source but **not yet verified by compilation or server gameplay**. Test the updated JAR on a backup server before moving your live economy over.
+
+## Update 0.5.0-paper: shop items, enchanted books, sidebar
+
+- All ordinary vanilla items previously blocked by shop disable flags have been re-enabled for buying and selling. Regular categories are reset to enabled on load; normal shop items can no longer be switched off by the admin editor. Special custom entries can still be managed separately.
+- All vanilla **enchanted books**, including books with several enchantments and those not listed in the shop, are sellable in `/sell`. Custom configured prices remain in use when positive; otherwise automatic pricing scales modestly with the stored enchantment levels.
+- The right-side money/shard scoreboard is rebuilt on join and automatically restored if another plugin replaces it. Players can also use `/sidebar` (or `/scoreboard`) to re-create it manually. The radar locator bar remains disabled.
+- Install **only** the updated **0.5.0-paper** JAR and confirm with `/diddyblud`. No code changes reach FalixNodes until the JAR is compiled and uploaded. If the sidebar still does not appear, inspect server startup errors and competing scoreboard plugins.
+
+Source changes need compilation and server testing before being considered verified.
