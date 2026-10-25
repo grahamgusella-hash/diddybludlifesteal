@@ -121,11 +121,32 @@ public final class PaperSpawners implements Listener {
             if(!existing.owner().equals(p.getUniqueId())&&!p.hasPermission("diddyblud.admin")){
                 p.sendMessage("§cYou do not own this spawner.");return;
             }
-            int added=Math.min(10000-existing.count(),p.isSneaking()?item.getAmount():1);
-            if(added<=0){p.sendMessage("§cStack is full.");return;}
+            int capacity=10000-existing.count();
+            if(capacity<=0){p.sendMessage("§cStack is full.");return;}
+            int added=0;
+            if(p.isSneaking()&&p.getGameMode()!=GameMode.CREATIVE){
+                // Sneak + right-click: deposit every matching spawner from
+                // storage, hotbar, and off-hand, up to the stack capacity.
+                PlayerInventory inventory=p.getInventory();
+                for(int slot=0;slot<inventory.getSize()&&added<capacity;slot++){
+                    ItemStack candidate=inventory.getItem(slot);
+                    if(candidate==null||!mob.equals(mobFromItem(candidate)))continue;
+                    int take=Math.min(candidate.getAmount(),capacity-added);
+                    int left=candidate.getAmount()-take;
+                    if(left==0)inventory.setItem(slot,null);
+                    else candidate.setAmount(left);
+                    added+=take;
+                }
+            }else{
+                added=1;
+                if(p.getGameMode()!=GameMode.CREATIVE){
+                    if(item.getAmount()==1)p.getInventory().setItemInMainHand(null);
+                    else item.setAmount(item.getAmount()-1);
+                }
+            }
+            if(added<=0){p.sendMessage("§cNo matching spawners found.");return;}
             placed.put(key(clicked),new Stack(mob,existing.count()+added,existing.stored(),existing.xp(),existing.owner()));
-            if(p.getGameMode()!=GameMode.CREATIVE)item.setAmount(item.getAmount()-added);
-            save();p.sendMessage("§aSpawner stack: "+(existing.count()+added));return;
+            save();p.sendMessage("§aAdded "+added+" "+mob+" spawner(s). Stack total: "+(existing.count()+added));return;
         }
         if(mob==null)return;
         if(clicked.getType().isInteractable()&&clicked.getType()!=Material.SPAWNER)return;
