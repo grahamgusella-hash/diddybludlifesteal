@@ -37,6 +37,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Map<String,Location>> homes=new HashMap<>();
     private final Map<UUID,UUID> requests=new HashMap<>();
     private final Map<String,ItemStack[]> vaults=new HashMap<>();
+    // Captured ClickVillagers head retains the entire original ItemStack metadata.
+    private ItemStack clickVillagerShopTemplate;
+    private static final String CLICK_VILLAGER_SHOP_ID="CLICKVILLAGER_CAPTURED";
     private final Map<Integer,Listing> auctions=new LinkedHashMap<>();
     private final Map<Integer,Order> orders=new LinkedHashMap<>();
     private final Map<UUID,Integer> sellTransactions=new HashMap<>();
@@ -178,6 +181,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        ItemStack storedVillager=y.getItemStack("clickvillager-shop-template");
+        if(isClickVillagerHead(storedVillager)){
+            clickVillagerShopTemplate=storedVillager.clone();
+            clickVillagerShopTemplate.setAmount(1);
+        }else if(storedVillager!=null){
+            getLogger().warning("Ignored unrecognised ClickVillagers head shop template.");
+        }
         ConfigurationSection timers=y.getConfigurationSection("shard-reward-seconds");
         if(timers!=null)for(String id:timers.getKeys(false)){
             try {
@@ -264,6 +274,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        y.set("clickvillager-shop-template",clickVillagerShopTemplate==null?null:clickVillagerShopTemplate.clone());
         y.set("server-spawn",serverSpawn);
         cash.forEach((id,v)->y.set("cash."+id,v));
         shards.forEach((id,v)->y.set("shards."+id,v));
@@ -345,9 +356,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         ItemMeta m=s.getItemMeta();
         if(m!=null){m.setDisplayName(name);s.setItemMeta(m);}return s;
     }
+    private boolean isClickVillagerHead(ItemStack stack){
+        if(stack==null||stack.getType()!=Material.PLAYER_HEAD||!stack.hasItemMeta())return false;
+        var container=stack.getItemMeta().getPersistentDataContainer();
+        // Do not treat vanilla heads or unrelated custom heads as villagers.
+        return container.getKeys().stream().anyMatch(key ->
+            key.getNamespace().toLowerCase(Locale.ROOT).contains("clickvillager") ||
+            key.getKey().toLowerCase(Locale.ROOT).contains("clickvillager") ||
+            key.getKey().toLowerCase(Locale.ROOT).contains("villager_data"));
+    }
     private String id(ItemStack stack){
         if(stack==null||stack.getType().isAir())return null;
         if(isHeart(stack))return "HEART";
+        if(isClickVillagerHead(stack))return CLICK_VILLAGER_SHOP_ID;
         if(spawners.mobFromItem(stack)!=null)return null; // never sell unique spawner as a vanilla item
         if(stack.getType()==Material.ENCHANTED_BOOK){
             var meta=(org.bukkit.inventory.meta.EnchantmentStorageMeta)stack.getItemMeta();
@@ -578,6 +599,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         p.openInventory(inv);
     }
     private ItemStack shopItem(String id){
+        if(id.equals(CLICK_VILLAGER_SHOP_ID)){
+            if(clickVillagerShopTemplate==null)return null;
+            ItemStack clone=clickVillagerShopTemplate.clone();
+            clone.setAmount(1);
+            return clone;
+        }
         if(id.equals("HEART"))return heart(1);
         if(id.startsWith("ENCHANT:")){
             org.bukkit.enchantments.Enchantment ench=Registry.ENCHANTMENT.get(NamespacedKey.minecraft(id.substring(8)));
@@ -760,9 +787,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(slot==25){openCategory(p,category,h.page+1,admin);return;}
             if(slot==22&&admin){
                 ItemStack held=p.getInventory().getItemInMainHand();
+                if(held.getType()==Material.PLAYER_HEAD&&!isClickVillagerHead(held)){
+                    p.sendMessage("§cThis head has no recognised ClickVillagers data. It cannot be listed as a captured villager.");
+                    return;
+                }
                 String id=id(held);if(id==null){p.sendMessage("§cHold an eligible item.");return;}
                 deletedShopListings.remove(id);
-                buy.putIfAbsent(id,100L);sell.putIfAbsent(id,10L);assignments.put(id,category);
+                if(id.equals(CLICK_VILLAGER_SHOP_ID)){
+                    clickVillagerShopTemplate=held.clone();clickVillagerShopTemplate.setAmount(1);
+                    buy.putIfAbsent(id,5000L);sell.put(id,0L); // buy-only for captured villagers
+                }else{
+                    buy.putIfAbsent(id,100L);sell.putIfAbsent(id,10L);
+                }
+                assignments.put(id,category);
                 save();openCategory(p,category,h.page,true);return;
             }
             if(slot>=18)return;
@@ -774,6 +811,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     // Delete the listing, not any player's actual item.
                     // A tombstone prevents defaults() from restoring it on restart.
                     deletedShopListings.add(id);
+                    if(id.equals(CLICK_VILLAGER_SHOP_ID))clickVillagerShopTemplate=null;
                     assignments.remove(id);
                     buy.remove(id);
                     sell.remove(id);
@@ -789,7 +827,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     if(!offItems.add(id))offItems.remove(id);
                 }
                 else if(e.isLeftClick())buy.put(id,buy.getOrDefault(id,0L)+100L);
-                else if(e.isRightClick())sell.put(id,sell.getOrDefault(id,0L)+10L);
+                else if(e.isRightClick()){
+                    if(id.equals(CLICK_VILLAGER_SHOP_ID)){
+                        p.sendMessage("§eCaptured villagers are buy-only in /shop to protect villager trade data.");return;
+                    }
+                    sell.put(id,sell.getOrDefault(id,0L)+10L);
+                }
                 save();openCategory(p,category,h.page,true);return;
             }
             if(offItems.contains(id)&&!isOrdinaryShopItem(id)){p.sendMessage("§cItem disabled.");return;}
@@ -799,6 +842,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 if(s==null){credit(p.getUniqueId(),buy.get(id));return;}
                 give(p,s);
             }else if(e.isRightClick()){
+                if(id.equals(CLICK_VILLAGER_SHOP_ID)){
+                    p.sendMessage("§cCaptured villagers are buy-only in this shop.");return;
+                }
                 for(ItemStack item:p.getInventory().getContents()){
                     if(id.equals(id(item))){
                         if(!credit(p.getUniqueId(),sell.getOrDefault(id,0L)))return;
@@ -925,6 +971,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private long sellValueFor(ItemStack item,String identifier){
         if(identifier==null)return 0;
+        if(identifier.equals(CLICK_VILLAGER_SHOP_ID))return 0;
         // Ordinary vanilla items must remain sellable even when previously
         // disabled via the shop editor. Only special shop items can be disabled.
         boolean enchantedBook=item!=null&&item.getType()==Material.ENCHANTED_BOOK;
@@ -1279,6 +1326,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     if(args.length==3&&args[0].equalsIgnoreCase("price")&&p.hasPermission("diddyblud.admin")){
                         String id=id(p.getInventory().getItemInMainHand());
                         if(id==null){p.sendMessage("Hold the item.");return true;}
+                        if(id.equals(CLICK_VILLAGER_SHOP_ID)){
+                            clickVillagerShopTemplate=p.getInventory().getItemInMainHand().clone();
+                            clickVillagerShopTemplate.setAmount(1);
+                            args[2]="0";
+                            p.sendMessage("§eCaptured villagers are buy-only. Sell price fixed at $0.");
+                        }
                         deletedShopListings.remove(id);
                         buy.put(id,parseAmount(args[1]));sell.put(id,parseAmount(args[2]));
                         assignments.putIfAbsent(id,"storage");save();p.sendMessage("Saved buy/sell for "+id);return true;
