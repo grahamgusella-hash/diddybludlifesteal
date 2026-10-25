@@ -845,30 +845,55 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
-    private void openRtp(Player p){
-        Inventory inv=menu("rtp",0,p.getUniqueId());
-        inv.setItem(11,icon(Material.GRASS_BLOCK,"Random teleport: near (up to 2000 blocks)"));
-        inv.setItem(15,icon(Material.ENDER_PEARL,"Random teleport: far (2000–8000 blocks)"));
+    private void openRtp(Player player){
+        Inventory inv=menu("rtp",0,player.getUniqueId());
+        inv.setItem(11,icon(Material.GRASS_BLOCK,"§aRTP Overworld"));
+        inv.setItem(13,icon(Material.NETHERRACK,"§cRTP Nether"));
+        inv.setItem(15,icon(Material.END_STONE,"§dRTP End"));
         inv.setItem(22,icon(Material.BARRIER,"Cancel"));
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
-        p.openInventory(inv);
+        player.openInventory(inv);
     }
-    private void teleportRandom(Player p,boolean far){
-        World world=p.getWorld();Random rng=new Random();
-        for(int tries=0;tries<30;tries++){
-            int distance=far?2000+rng.nextInt(6001):200+rng.nextInt(1801);
-            double angle=rng.nextDouble()*Math.PI*2;
-            int x=p.getLocation().getBlockX()+(int)(Math.cos(angle)*distance);
-            int z=p.getLocation().getBlockZ()+(int)(Math.sin(angle)*distance);
-            int y=world.getHighestBlockYAt(x,z);
-            Material below=world.getBlockAt(x,y-1,z).getType();
-            if(!below.isSolid()||below==Material.LAVA)continue;
-            Location at=new Location(world,x+0.5,y+1,z+0.5);
-            if(at.getBlock().isEmpty()&&at.clone().add(0,1,0).getBlock().isEmpty()){
-                p.teleport(at);p.sendMessage("§aRandom teleport successful.");return;
+    private World rtpWorld(World.Environment environment){
+        for(World world:Bukkit.getWorlds())
+            if(world.getEnvironment()==environment)return world;
+        return null;
+    }
+    private void teleportRandom(Player player,World.Environment environment){
+        World world=rtpWorld(environment);
+        if(world==null){player.sendMessage("§cThat dimension is not enabled.");return;}
+        Random random=new Random();
+        int radius=environment==World.Environment.THE_END?4000:6000;
+        for(int attempt=0;attempt<160;attempt++){
+            int x=random.nextInt(radius*2+1)-radius;
+            int z=random.nextInt(radius*2+1)-radius;
+            if(Math.abs(x)<400&&Math.abs(z)<400)continue;
+            if(!world.getWorldBorder().isInside(new Location(world,x+0.5,64,z+0.5)))continue;
+            // The Nether has a bedrock roof, so highestBlockYAt is unsafe.
+            // Search the interior from below the roof and verify two air blocks.
+            int top=environment==World.Environment.NETHER?
+                Math.min(world.getMaxHeight()-3,120):
+                Math.min(world.getMaxHeight()-3,world.getHighestBlockYAt(x,z)+1);
+            int bottom=environment==World.Environment.NETHER?30:world.getMinHeight()+2;
+            for(int y=top;y>=bottom;y--){
+                Block floor=world.getBlockAt(x,y-1,z);
+                Block feet=world.getBlockAt(x,y,z);
+                Block head=world.getBlockAt(x,y+1,z);
+                Material under=floor.getType();
+                if(!under.isSolid()||under==Material.LAVA||under==Material.MAGMA_BLOCK||
+                    under==Material.CACTUS||under==Material.BEDROCK||
+                    under==Material.FIRE||under==Material.SOUL_FIRE)continue;
+                if(!feet.isEmpty()||!head.isEmpty())continue;
+                if(environment==World.Environment.THE_END&&y<45)continue;
+                Location dest=new Location(world,x+0.5,y,z+0.5,
+                    player.getLocation().getYaw(),player.getLocation().getPitch());
+                if(player.teleport(dest)){
+                    player.sendMessage("§aRandomly teleported to "+world.getName()+".");
+                }else player.sendMessage("§cTeleportation was prevented.");
+                return;
             }
         }
-        p.sendMessage("§cNo safe random destination found.");
+        player.sendMessage("§cCould not find a safe location in "+world.getName()+".");
     }
     private void openCustom(Player p){
         Inventory inv=menu("customitems",0,p.getUniqueId());
@@ -1093,7 +1118,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(slot==18){if(h.page==0)openShop(p,0,false);else openList(p,type,h.page-1);return;}
         if(slot==25){openList(p,type,h.page+1);return;}
         if(type.equals("rtp")){
-            if(slot==11||slot==15){p.closeInventory();teleportRandom(p,slot==15);}
+            if(slot==11||slot==13||slot==15){
+                p.closeInventory();
+                teleportRandom(p,slot==11?World.Environment.NORMAL:
+                    slot==13?World.Environment.NETHER:World.Environment.THE_END);
+            }
             else if(slot==22)p.closeInventory();
         }else if(type.equals("customitems")){
             if(!p.hasPermission("diddyblud.admin"))return;
@@ -1699,7 +1728,18 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     int number=args.length==0?1:Integer.parseInt(args[0]);
                     if(number>=1&&number<=3)openVault(p,number);return true;
                 }
-                case "rtp" ->{openRtp(p);return true;}
+                case "rtp" ->{
+                    if(args.length==0){openRtp(p);return true;}
+                    World.Environment env=switch(args[0].toLowerCase(Locale.ROOT)){
+                        case "overworld" -> World.Environment.NORMAL;
+                        case "nether" -> World.Environment.NETHER;
+                        case "end" -> World.Environment.THE_END;
+                        default -> null;
+                    };
+                    if(env==null)p.sendMessage("§eUsage: /rtp [overworld|nether|end]");
+                    else teleportRandom(p,env);
+                    return true;
+                }
                 case "rtpq" ->{
                     if(args.length>0&&args[0].equalsIgnoreCase("leave")){
                         if(uid.equals(queuePlayer)){queuePlayer=null;p.sendMessage("Left the RTP queue.");}
