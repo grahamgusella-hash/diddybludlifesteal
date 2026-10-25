@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.8-paper
+version: 0.8.9-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -11,6 +11,9 @@ commands:
     permission: diddyblud.admin
     usage: "/leaderboard <money|playtime|hearts> [remove]"
   shop: {description: Open shop categories}
+  shopedit:
+    description: Manage shop listing deletion and editor instructions
+    permission: diddyblud.admin
   sell: {description: Open sell deposit GUI, or OP price edit}
   bal: {description: Check money}
   balance: {description: Check money}
