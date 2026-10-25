@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.5-paper
+version: 0.8.6-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -20,6 +20,9 @@ commands:
   hearts: {description: Check or change hearts (OP)}
   withdraw: {description: Withdraw a heart as an item}
   customitems: {description: Admin item GUI}
+  3x3pickaxe:
+    description: Give yourself an unbreakable 3x3 pickaxe
+    permission: diddyblud.admin
   ah: {description: Auction house}
   auction: {description: Auction house}
   orders: {description: Buy orders GUI}
