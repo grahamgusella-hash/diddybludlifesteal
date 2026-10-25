@@ -37,6 +37,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<String,Long> buy=new LinkedHashMap<>(),sell=new LinkedHashMap<>(),shardPrices=new LinkedHashMap<>();
     private final Map<String,String> assignments=new LinkedHashMap<>();
     private final Map<String,Material> categories=new LinkedHashMap<>();
+    private final Map<String,String> shopNames=new HashMap<>();
+    private final List<String> categoryOrder=new ArrayList<>();
+    private final List<String> itemOrder=new ArrayList<>();
+    private final Map<UUID,String> pendingShopRename=new HashMap<>();
+    private final Map<UUID,String> pendingShopSwap=new HashMap<>();
     private final Set<String> offCategories=new HashSet<>(),offItems=new HashSet<>();
     private final Set<String> deletedShopListings=new HashSet<>();
     private final Map<UUID,Map<String,Location>> homes=new HashMap<>();
@@ -229,6 +234,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             Map<String,Long> target=section.equals("buy")?buy:section.equals("sell")?sell:shardPrices;
             for(String k:s.getKeys(false))target.put(k,Math.max(0,s.getLong(k)));
         }
+        ConfigurationSection names=y.getConfigurationSection("shop-display-names");
+        if(names!=null)for(String k:names.getKeys(false))shopNames.put(k,names.getString(k,k));
+        categoryOrder.addAll(y.getStringList("category-order"));
+        itemOrder.addAll(y.getStringList("item-order"));
         ConfigurationSection cs=y.getConfigurationSection("categories");
         if(cs!=null)for(String k:cs.getKeys(false)){
             Material m=Material.matchMaterial(cs.getString(k,""));
@@ -290,6 +299,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        shopNames.forEach((k,v)->y.set("shop-display-names."+k,v));
+        y.set("category-order",new ArrayList<>(categoryOrder));
+        y.set("item-order",new ArrayList<>(itemOrder));
         y.set("clickvillager-shop-template",clickVillagerShopTemplate==null?null:clickVillagerShopTemplate.clone());
         y.set("server-spawn",serverSpawn);
         cash.forEach((id,v)->y.set("cash."+id,v));
@@ -661,15 +673,60 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         "drops","blocks","farming","storage","redstone"
     };
     private static final int[] FIXED_SLOTS={11,12,13,14,20,21,22,23,24};
+    private List<String> sortedCategories(){
+        List<String> all=new ArrayList<>(categories.keySet());
+        all.sort(Comparator.comparingInt(k->{
+            int i=categoryOrder.indexOf(k);
+            return i<0?Integer.MAX_VALUE:i;
+        }));
+        return all;
+    }
+    private List<String> sortedItems(String category){
+        List<String> ids=new ArrayList<>();
+        for(String id:assignments.keySet())
+            if(category.equals(assignments.get(id)))ids.add(id);
+        ids.sort(Comparator.comparingInt(k->{
+            int i=itemOrder.indexOf(k);
+            return i<0?Integer.MAX_VALUE:i;
+        }));
+        return ids;
+    }
+    private void swapShopKeys(String first,String second,boolean category){
+        List<String> order=category?categoryOrder:itemOrder;
+        List<String> all=category?sortedCategories():new ArrayList<>(assignments.keySet());
+        for(String key:all)if(!order.contains(key))order.add(key);
+        int a=order.indexOf(first),b=order.indexOf(second);
+        if(a>=0&&b>=0)Collections.swap(order,a,b);
+        save();
+    }
     private List<String> visibleCategories(int page){
-        if(page==0)return Arrays.asList(FIXED_CATEGORIES);
-        List<String> extras=new ArrayList<>();
-        for(String category:categories.keySet()){
-            if(!Arrays.asList(FIXED_CATEGORIES).contains(category))extras.add(category);
-        }
-        int begin=(page-1)*18;
-        if(begin>=extras.size())return Collections.emptyList();
-        return extras.subList(begin,Math.min(begin+18,extras.size()));
+        List<String> all=sortedCategories();
+        int start=page==0?0:9+(page-1)*18;
+        int size=page==0?9:18;
+        if(start>=all.size())return Collections.emptyList();
+        return all.subList(start,Math.min(start+size,all.size()));
+    }
+    @EventHandler(priority=EventPriority.HIGHEST)
+    public void shopRenameChat(AsyncPlayerChatEvent event){
+        UUID uuid=event.getPlayer().getUniqueId();
+        String key=pendingShopRename.get(uuid);
+        if(key==null)return;
+        event.setCancelled(true);
+        String name=ChatColor.stripColor(event.getMessage()).trim();
+        getServer().getScheduler().runTask(this,()->{
+            pendingShopRename.remove(uuid);
+            Player player=Bukkit.getPlayer(uuid);
+            if(player==null)return;
+            if(name.equalsIgnoreCase("cancel")){
+                player.sendMessage("§eShop rename cancelled.");return;
+            }
+            if(name.isEmpty()||name.length()>40||name.contains("§")){
+                player.sendMessage("§cName must be 1–40 characters.");return;
+            }
+            if(!player.hasPermission("diddyblud.admin"))return;
+            shopNames.put(key,name);save();
+            player.sendMessage("§aRenamed shop entry to "+name+". Open /shop to see it.");
+        });
     }
     /**
      * Decorations only occupy unassigned UI slots. Vault slots are reserved
@@ -719,7 +776,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             Material material=categories.get(category);
             if(material==null)continue;
             int slot=page==0?FIXED_SLOTS[i]:i;
-            inv.setItem(slot,icon(material,(offCategories.contains(category)?"§cOFF §r":"")+category));
+            inv.setItem(slot,icon(material,(offCategories.contains(category)?"§cOFF §r":"")+shopNames.getOrDefault("cat:"+category,category)));
+            if(admin){
+                ItemStack display=inv.getItem(slot);
+                ItemMeta m=display.getItemMeta();
+                m.setLore(List.of("§eShift-left: select / swap category","§eShift-right: rename via chat"));
+                display.setItemMeta(m);
+            }
         }
         inv.setItem(18,icon(Material.ARROW,"Previous page"));
         inv.setItem(25,icon(Material.ARROW,"Next page"));
@@ -732,16 +795,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private void openCategory(Player p,String category,int page,boolean admin){
         Inventory inv=menu((admin?"catadmin:":"cat:")+category,page,p.getUniqueId());
-        List<String> ids=assignments.keySet().stream().filter(id->category.equals(assignments.get(id))).toList();
+        List<String> ids=sortedItems(category);
         int start=page*18;
         for(int i=0;i<18&&start+i<ids.size();i++){
             String id=ids.get(start+i);
             if(!buy.containsKey(id))continue;
             ItemStack s=shopItem(id);
             if(s==null)continue;
-            ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)&&!isOrdinaryShopItem(id)?"§cDISABLED ":"")+id+
+            ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)&&!isOrdinaryShopItem(id)?"§cDISABLED ":"")+shopNames.getOrDefault("item:"+id,id)+
                " §aBuy $"+buy.get(id)+" §eSell $"+sell.getOrDefault(id,0L));
-            if(admin)meta.setLore(List.of("§eLeft-click: +$100 buy price","§eRight-click: +$10 sell price","§cShift + Right-click: DELETE listing","§7Shift + Left-click: toggle special item"));
+            if(admin)meta.setLore(List.of("§eLeft: +$100 buy price","§eRight: +$10 sell price","§eShift-left: select / swap order","§eShift-right: rename via chat","§7Delete: /shopedit deleteitem <id>"));
             s.setItemMeta(meta);inv.setItem(i,s);
         }
         inv.setItem(18,icon(Material.ARROW,"Back"));
@@ -920,7 +983,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     p.sendMessage("§cRename the category icon item in an anvil first.");return;
                 }
                 String name=ChatColor.stripColor(held.getItemMeta().getDisplayName()).toLowerCase(Locale.ROOT).replace(' ','_');
-                categories.putIfAbsent(name,held.getType());save();openShop(p,h.page,true);return;
+                categories.putIfAbsent(name,held.getType());
+                if(!categoryOrder.contains(name))categoryOrder.add(name);
+                save();openShop(p,h.page,true);return;
             }
             if(slot==18){openShop(p,Math.max(0,h.page-1),admin);return;}
             if(slot==25){openShop(p,h.page+1,admin);return;}
@@ -932,7 +997,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(at<0||at>=cats.size())return;
             String cat=cats.get(at);
             if(admin&&e.isShiftClick()){
-                p.sendMessage("§eShop categories remain enabled so players can trade normal items.");
+                String key="cat:"+cat;
+                if(e.isRightClick()){
+                    pendingShopRename.put(p.getUniqueId(),key);p.closeInventory();
+                    p.sendMessage("§eType the new category display name in chat (or cancel).");return;
+                }
+                String previous=pendingShopSwap.remove(p.getUniqueId());
+                if(previous==null||!previous.startsWith("cat:")){
+                    pendingShopSwap.put(p.getUniqueId(),key);
+                    p.sendMessage("§eNow shift-left another category to swap positions.");return;
+                }
+                swapShopKeys(previous.substring(4),cat,true);
                 openShop(p,h.page,true);return;
             }
             // Every ordinary shop category remains open to all players.
@@ -961,31 +1036,29 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     buy.putIfAbsent(id,100L);sell.putIfAbsent(id,10L);
                 }
                 assignments.put(id,category);
+                if(!itemOrder.contains(id))itemOrder.add(id);
                 save();openCategory(p,category,h.page,true);return;
             }
             if(slot>=18)return;
-            List<String> ids=assignments.keySet().stream().filter(k->category.equals(assignments.get(k))).toList();
+            List<String> ids=sortedItems(category);
             int at=h.page*18+slot;if(at>=ids.size())return;
             String id=ids.get(at);
             if(admin){
-                if(e.isShiftClick()&&e.isRightClick()){
-                    // Delete the listing, not any player's actual item.
-                    // A tombstone prevents defaults() from restoring it on restart.
-                    deletedShopListings.add(id);
-                    if(id.equals(CLICK_VILLAGER_SHOP_ID))clickVillagerShopTemplate=null;
-                    assignments.remove(id);
-                    buy.remove(id);
-                    sell.remove(id);
-                    offItems.remove(id);
-                    save();
-                    p.sendMessage("§aRemoved "+id+" from /shop. Hold it and use the add button to restore it.");
-                    int remaining=(int)assignments.values().stream().filter(category::equals).count();
-                    openCategory(p,category,Math.max(0,Math.min(h.page,(Math.max(0,remaining-1))/18)),true);
-                    return;
-                }
                 if(e.isShiftClick()){
-                    if(isOrdinaryShopItem(id)){p.sendMessage("§eNormal Minecraft items cannot be disabled.");return;}
-                    if(!offItems.add(id))offItems.remove(id);
+                    if(e.isRightClick()){
+                        pendingShopRename.put(p.getUniqueId(),"item:"+id);
+                        p.closeInventory();
+                        p.sendMessage("§eType the new item display name in chat (or cancel).");
+                        return;
+                    }
+                    String key="item:"+id;
+                    String selected=pendingShopSwap.remove(p.getUniqueId());
+                    if(selected==null||!selected.startsWith("item:")){
+                        pendingShopSwap.put(p.getUniqueId(),key);
+                        p.sendMessage("§eShift-left another item to swap positions.");return;
+                    }
+                    swapShopKeys(selected.substring(5),id,false);
+                    openCategory(p,category,h.page,true);return;
                 }
                 else if(e.isLeftClick())buy.put(id,buy.getOrDefault(id,0L)+100L);
                 else if(e.isRightClick()){
@@ -1487,6 +1560,18 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     setHearts(p,maxHearts(p)-n);give(p,heart(n));return true;
                 }
                 case "shop" ->{openShop(p,0,false);return true;}
+                case "shopedit" ->{
+                    if(!p.hasPermission("diddyblud.admin"))return true;
+                    if(args.length==2&&args[0].equalsIgnoreCase("deleteitem")){
+                        String key=args[1].toUpperCase(Locale.ROOT);
+                        if(!assignments.containsKey(key)){p.sendMessage("§cItem not found.");return true;}
+                        deletedShopListings.add(key);assignments.remove(key);buy.remove(key);sell.remove(key);
+                        itemOrder.remove(key);shopNames.remove("item:"+key);save();
+                        p.sendMessage("§aDeleted listing "+key);return true;
+                    }
+                    p.sendMessage("§eUse /shop → Admin Mode: shift-left to swap; shift-right to rename.");
+                    p.sendMessage("§e/shopedit deleteitem <item id> removes a listing.");return true;
+                }
                 case "sell" ->{
                     if(args.length==3&&args[0].equalsIgnoreCase("price")&&p.hasPermission("diddyblud.admin")){
                         String id=id(p.getInventory().getItemInMainHand());
