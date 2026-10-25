@@ -42,6 +42,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final List<String> itemOrder=new ArrayList<>();
     private final Map<UUID,String> pendingShopRename=new HashMap<>();
     private final Map<UUID,String> pendingShopSwap=new HashMap<>();
+    private record ShopSelection(String itemId,String category,int page,boolean selling,int quantity){}
+    private final Map<UUID,ShopSelection> shopSelections=new HashMap<>();
     private final Set<String> offCategories=new HashSet<>(),offItems=new HashSet<>();
     private final Set<String> deletedShopListings=new HashSet<>();
     private final Map<UUID,Map<String,Location>> homes=new HashMap<>();
@@ -815,6 +817,83 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
+    private void openShopQuantity(Player player,String id,String category,int page,boolean selling,int quantity){
+        if(!assignments.containsKey(id)||!buy.containsKey(id))return;
+        int amount=Math.max(1,Math.min(64,quantity));
+        shopSelections.put(player.getUniqueId(),new ShopSelection(id,category,page,selling,amount));
+        Inventory inv=menu("shopqty",0,player.getUniqueId());
+        ItemStack preview=shopItem(id);
+        if(preview==null){player.sendMessage("§cThat item is currently unavailable.");return;}
+        ItemStack displayed=preview.clone();
+        displayed.setAmount(Math.min(amount,displayed.getMaxStackSize()));
+        ItemMeta meta=displayed.getItemMeta();
+        long unit=selling?sell.getOrDefault(id,0L):buy.getOrDefault(id,0L);
+        String label=shopNames.getOrDefault("item:"+id,id);
+        meta.setDisplayName("§f"+label+" §e×"+amount);
+        meta.setLore(List.of("§7Quantity: §f"+amount+"/64",
+            "§7Each: §6$"+unit,"§7Total: §6$"+(unit*amount),
+            selling?"§cSell to shop":"§aBuy from shop"));
+        displayed.setItemMeta(meta);
+        inv.setItem(13,displayed);
+        inv.setItem(9,icon(Material.RED_STAINED_GLASS_PANE,"§c-10"));
+        inv.setItem(10,icon(Material.RED_STAINED_GLASS_PANE,"§c-1"));
+        inv.setItem(16,icon(Material.LIME_STAINED_GLASS_PANE,"§a+1"));
+        inv.setItem(17,icon(Material.LIME_STAINED_GLASS_PANE,"§a+10"));
+        inv.setItem(11,icon(Material.PAPER,"§eSet 1"));
+        inv.setItem(15,icon(Material.PAPER,"§eSet 64"));
+        inv.setItem(22,icon(Material.EMERALD_BLOCK,selling?"§cCONFIRM SELL":"§aCONFIRM BUY"));
+        inv.setItem(18,icon(Material.ARROW,"§eBack"));
+        inv.setItem(26,icon(Material.BARRIER,"§cCancel"));
+        player.openInventory(inv);
+    }
+    private void completeShopQuantity(Player p,ShopSelection selected){
+        if(selected==null)return;
+        String id=selected.itemId();
+        int qty=selected.quantity();
+        if(qty<1||qty>64||!assignments.containsKey(id)||!buy.containsKey(id)){
+            p.sendMessage("§cThis shop listing is unavailable.");return;
+        }
+        if(offItems.contains(id)&&!isOrdinaryShopItem(id)){
+            p.sendMessage("§cThis shop item is disabled.");return;
+        }
+        long unit=selected.selling()?sell.getOrDefault(id,0L):buy.getOrDefault(id,0L);
+        if(unit<0||unit>Long.MAX_VALUE/qty){p.sendMessage("§cInvalid total price.");return;}
+        long total=unit*qty;
+        if(selected.selling()){
+            if(id.equals(CLICK_VILLAGER_SHOP_ID)||id.equals(INFINITE_ROCKET_ID)||id.equals(INFINITE_WATER_ID)||total<=0){
+                p.sendMessage("§cThis item cannot be sold to the shop.");return;
+            }
+            int available=0;
+            for(ItemStack item:p.getInventory().getStorageContents())
+                if(id.equals(id(item)))available+=item.getAmount();
+            if(available<qty){p.sendMessage("§cYou don't have "+qty+" of that item.");return;}
+            if(!credit(p.getUniqueId(),total)){p.sendMessage("§cCannot credit that amount.");return;}
+            int left=qty;
+            ItemStack[] contents=p.getInventory().getStorageContents();
+            for(int i=0;i<contents.length&&left>0;i++){
+                ItemStack item=contents[i];
+                if(!id.equals(id(item)))continue;
+                int remove=Math.min(left,item.getAmount());
+                if(remove==item.getAmount())contents[i]=null;
+                else item.setAmount(item.getAmount()-remove);
+                left-=remove;
+            }
+            p.getInventory().setStorageContents(contents);
+            p.sendMessage("§aSold "+qty+" × "+id+" for $"+total+".");
+        }else{
+            ItemStack prototype=shopItem(id);
+            if(prototype==null){p.sendMessage("§cItem currently unavailable.");return;}
+            if(!charge(p.getUniqueId(),total)){p.sendMessage("§cNot enough money.");return;}
+            int left=qty;
+            while(left>0){
+                ItemStack stack=prototype.clone();
+                int n=Math.min(left,stack.getMaxStackSize());
+                stack.setAmount(n);
+                give(p,stack);left-=n;
+            }
+            p.sendMessage("§aBought "+qty+" × "+id+" for $"+total+".");
+        }
+    }
     private ItemStack shopItem(String id){
         if(id.equals(INFINITE_PICKAXE_ID))return infiniteAreaPickaxe();
         if(id.equals(INFINITE_ROCKET_ID))return infiniteRocket();
@@ -999,6 +1078,31 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(clicked!=null&&clicked.hasItemMeta()&&
             clicked.getItemMeta().getPersistentDataContainer().has(halloweenKey,PersistentDataType.BYTE))
             return; // Halloween filler is decorative, never a shop product or button.
+        if(type.equals("shopqty")){
+            ShopSelection selection=shopSelections.get(p.getUniqueId());
+            if(selection==null){p.closeInventory();return;}
+            int q=selection.quantity();
+            if(slot==18||slot==26){
+                shopSelections.remove(p.getUniqueId());
+                if(slot==18)openCategory(p,selection.category(),selection.page(),false);
+                else p.closeInventory();
+                return;
+            }
+            if(slot==22){
+                shopSelections.remove(p.getUniqueId());
+                completeShopQuantity(p,selection);
+                openCategory(p,selection.category(),selection.page(),false);
+                return;
+            }
+            int updated=switch(slot){
+                case 9 -> q-10;case 10 -> q-1;case 11 -> 1;
+                case 15 -> 64;case 16 -> q+1;case 17 -> q+10;
+                default -> q;
+            };
+            if(updated!=q)openShopQuantity(p,selection.itemId(),selection.category(),
+                selection.page(),selection.selling(),updated);
+            return;
+        }
         if(type.equals("shop")||type.equals("shopadmin")){
             boolean admin=type.equals("shopadmin")&&p.hasPermission("diddyblud.admin");
             if(slot==26&&p.hasPermission("diddyblud.admin")){openShop(p,0,!admin);return;}
@@ -1094,23 +1198,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 }
                 save();openCategory(p,category,h.page,true);return;
             }
-            if(offItems.contains(id)&&!isOrdinaryShopItem(id)){p.sendMessage("§cItem disabled.");return;}
-            if(e.isLeftClick()){
-                if(!charge(p.getUniqueId(),buy.getOrDefault(id,0L))){p.sendMessage("§cNot enough money.");return;}
-                ItemStack s=shopItem(id);
-                if(s==null){credit(p.getUniqueId(),buy.get(id));return;}
-                give(p,s);
-            }else if(e.isRightClick()){
-                if(id.equals(CLICK_VILLAGER_SHOP_ID)){
-                    p.sendMessage("§cCaptured villagers are buy-only in this shop.");return;
-                }
-                for(ItemStack item:p.getInventory().getContents()){
-                    if(id.equals(id(item))){
-                        if(!credit(p.getUniqueId(),sell.getOrDefault(id,0L)))return;
-                        item.setAmount(item.getAmount()-1);return;
-                    }
-                }
-                p.sendMessage("§cYou don't have this item.");
+            if(offItems.contains(id)&&!isOrdinaryShopItem(id)){
+                p.sendMessage("§cItem disabled.");return;
+            }
+            if(e.isLeftClick()||e.isRightClick()){
+                openShopQuantity(p,id,category,h.page,e.isRightClick(),1);
             }
             return;
         }
@@ -1445,6 +1537,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onQuit(PlayerQuitEvent e){
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
         sidebars.remove(e.getPlayer().getUniqueId());
+        shopSelections.remove(e.getPlayer().getUniqueId());
         lifeLossProcessed.remove(e.getPlayer().getUniqueId());
         save();
     }
