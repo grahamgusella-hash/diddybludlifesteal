@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.block.Block;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.event.inventory.*;
@@ -44,6 +45,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private ItemStack clickVillagerShopTemplate;
     private static final String CLICK_VILLAGER_SHOP_ID="CLICKVILLAGER_CAPTURED";
     private static final String INFINITE_PICKAXE_ID="INFINITE_3X3_PICKAXE";
+    private static final String INFINITE_ROCKET_ID="INFINITE_ROCKET";
+    private static final String INFINITE_WATER_ID="INFINITE_WATER_BUCKET";
     private boolean miningAdditionalBlocks=false;
     private final Map<Integer,Listing> auctions=new LinkedHashMap<>();
     private final Map<Integer,Order> orders=new LinkedHashMap<>();
@@ -57,7 +60,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Scoreboard> sidebars=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
     private UUID queuePlayer=null;
-    private NamespacedKey heartKey,spawnerKey,halloweenKey,areaPickaxeKey;
+    private NamespacedKey heartKey,spawnerKey,halloweenKey,areaPickaxeKey,infiniteRocketKey,infiniteWaterKey;
     private File dataFile;
     private PaperSpawners spawners;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
@@ -71,6 +74,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         spawnerKey=new NamespacedKey(this,"spawner_type");
         halloweenKey=new NamespacedKey(this,"halloween_filler");
         areaPickaxeKey=new NamespacedKey(this,"infinite_3x3_pickaxe");
+        infiniteRocketKey=new NamespacedKey(this,"infinite_rocket");
+        infiniteWaterKey=new NamespacedKey(this,"infinite_water_bucket");
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
         for(World world:getServer().getWorlds())setRadarOff(world);
@@ -143,6 +148,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             "combat,NETHERITE_LEGGINGS,70000,11500","combat,NETHERITE_BOOTS,50000,8200",
             "combat,BOW,700,110","combat,ARROW,45,8","combat,HEART,75000,15000",
             "combat,INFINITE_3X3_PICKAXE,150000,25000",
+            "combat,INFINITE_ROCKET,85000,0","combat,INFINITE_WATER_BUCKET,45000,0",
             "drops,BLAZE_ROD,450,18","drops,BONE,75,6","drops,ROTTEN_FLESH,35,4",
             "drops,GUNPOWDER,300,12","drops,STRING,100,7","drops,ENDER_PEARL,950,14",
             "drops,SLIME_BALL,340,55","drops,SPIDER_EYE,80,12","drops,LEATHER,125,24",
@@ -167,7 +173,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         };
         for(String row:rows){
             String[] x=row.split(",");
-            if(!x[1].equals("HEART")&&!x[1].equals(INFINITE_PICKAXE_ID)&&Material.matchMaterial(x[1])==null)continue;
+            if(!x[1].equals("HEART")&&!x[1].equals(INFINITE_PICKAXE_ID)&&
+                !x[1].equals(INFINITE_ROCKET_ID)&&!x[1].equals(INFINITE_WATER_ID)&&
+                Material.matchMaterial(x[1])==null)continue;
             buy.putIfAbsent(x[1],Long.parseLong(x[2]));
             sell.putIfAbsent(x[1],Long.parseLong(x[3]));
             assignments.putIfAbsent(x[1],x[0]);
@@ -388,10 +396,81 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         tool.setItemMeta(meta);
         return tool;
     }
+    private boolean isInfiniteRocket(ItemStack item){
+        return item!=null&&item.getType()==Material.FIREWORK_ROCKET&&item.hasItemMeta()&&
+            item.getItemMeta().getPersistentDataContainer().has(infiniteRocketKey,PersistentDataType.BYTE);
+    }
+    private boolean isInfiniteWater(ItemStack item){
+        return item!=null&&item.getType()==Material.WATER_BUCKET&&item.hasItemMeta()&&
+            item.getItemMeta().getPersistentDataContainer().has(infiniteWaterKey,PersistentDataType.BYTE);
+    }
+    private ItemStack infiniteRocket(){
+        ItemStack item=new ItemStack(Material.FIREWORK_ROCKET);
+        ItemMeta meta=item.getItemMeta();
+        meta.setDisplayName("§6§lInfinite Rocket");
+        meta.setLore(List.of("§7Unlimited firework rocket uses","§bPerfect for Elytra flight"));
+        meta.getPersistentDataContainer().set(infiniteRocketKey,PersistentDataType.BYTE,(byte)1);
+        item.setItemMeta(meta);
+        return item;
+    }
+    private ItemStack infiniteWater(){
+        ItemStack item=new ItemStack(Material.WATER_BUCKET);
+        ItemMeta meta=item.getItemMeta();
+        meta.setDisplayName("§b§lInfinite Water Bucket");
+        meta.setLore(List.of("§7Place water without using up the bucket","§bInfinite uses"));
+        meta.getPersistentDataContainer().set(infiniteWaterKey,PersistentDataType.BYTE,(byte)1);
+        item.setItemMeta(meta);
+        return item;
+    }
+    // Restore a consumed special item only if the original hand slot has become
+    // empty/the vanilla replacement. Never overwrite items placed there meanwhile.
+    private void restoreSpecialHand(Player player,EquipmentSlot hand,ItemStack original,
+                                    Material vanillaReplacement){
+        ItemStack held=hand==EquipmentSlot.OFF_HAND?
+            player.getInventory().getItemInOffHand():player.getInventory().getItemInMainHand();
+        if(held!=null&&!held.getType().isAir()&&held.getType()!=vanillaReplacement)return;
+        if(held!=null&&held.getType()==vanillaReplacement&&held.hasItemMeta())return;
+        ItemStack restored=original.clone();restored.setAmount(1);
+        if(hand==EquipmentSlot.OFF_HAND)player.getInventory().setItemInOffHand(restored);
+        else player.getInventory().setItemInMainHand(restored);
+    }
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)
+    public void onInfiniteRocketUse(PlayerInteractEvent event){
+        var action=event.getAction();
+        if(action!=org.bukkit.event.block.Action.RIGHT_CLICK_AIR&&
+           action!=org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK)return;
+        EquipmentSlot hand=event.getHand();
+        if(hand!=EquipmentSlot.HAND&&hand!=EquipmentSlot.OFF_HAND)return;
+        Player player=event.getPlayer();
+        if(player.getGameMode()==GameMode.CREATIVE||player.getGameMode()==GameMode.SPECTATOR)return;
+        ItemStack original=event.getItem();
+        if(!isInfiniteRocket(original))return;
+        // Let vanilla launch the rocket normally, including Elytra boosts.
+        // Return the single consumed rocket on the next tick.
+        ItemStack snapshot=original.clone();
+        getServer().getScheduler().runTask(this,()->
+            restoreSpecialHand(player,hand,snapshot,Material.AIR));
+    }
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)
+    public void onInfiniteWaterPlace(PlayerBucketEmptyEvent event){
+        Player player=event.getPlayer();
+        if(player.getGameMode()==GameMode.CREATIVE||player.getGameMode()==GameMode.SPECTATOR)return;
+        EquipmentSlot hand=event.getHand();
+        if(hand!=EquipmentSlot.HAND&&hand!=EquipmentSlot.OFF_HAND)return;
+        ItemStack original=event.getItemStack();
+        if(!isInfiniteWater(original))return;
+        ItemStack snapshot=original.clone();
+        // Vanilla performs the placement and turns the water bucket into an
+        // empty bucket. Afterward restore the tagged water bucket to the same hand.
+        getServer().getScheduler().runTask(this,()->
+            restoreSpecialHand(player,hand,snapshot,Material.BUCKET));
+    }
     private String id(ItemStack stack){
         if(stack==null||stack.getType().isAir())return null;
         if(isHeart(stack))return "HEART";
         if(isInfiniteAreaPickaxe(stack))return INFINITE_PICKAXE_ID;
+        if(isInfiniteRocket(stack))return INFINITE_ROCKET_ID;
+        if(isInfiniteWater(stack))return INFINITE_WATER_ID;
         if(isClickVillagerHead(stack))return CLICK_VILLAGER_SHOP_ID;
         if(spawners.mobFromItem(stack)!=null)return null; // never sell unique spawner as a vanilla item
         if(stack.getType()==Material.ENCHANTED_BOOK){
@@ -667,6 +746,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private ItemStack shopItem(String id){
         if(id.equals(INFINITE_PICKAXE_ID))return infiniteAreaPickaxe();
+        if(id.equals(INFINITE_ROCKET_ID))return infiniteRocket();
+        if(id.equals(INFINITE_WATER_ID))return infiniteWater();
         if(id.equals(CLICK_VILLAGER_SHOP_ID)){
             if(clickVillagerShopTemplate==null)return null;
             ItemStack clone=clickVillagerShopTemplate.clone();
@@ -722,6 +803,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Inventory inv=menu("customitems",0,p.getUniqueId());
         inv.setItem(10,heart(1));
         inv.setItem(20,infiniteAreaPickaxe());
+        inv.setItem(21,infiniteRocket());
+        inv.setItem(22,infiniteWater());
         String[] mobs=PaperSpawners.MOBS;
         for(int i=0;i<mobs.length;i++)inv.setItem(11+i,spawners.spawner(mobs[i],1));
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
@@ -935,6 +1018,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(!p.hasPermission("diddyblud.admin"))return;
             if(slot==10)give(p,heart(1));
             else if(slot==20)give(p,infiniteAreaPickaxe());
+            else if(slot==21)give(p,infiniteRocket());
+            else if(slot==22)give(p,infiniteWater());
             else if(slot>=11&&slot<11+PaperSpawners.MOBS.length)give(p,spawners.spawner(PaperSpawners.MOBS[slot-11],1));
         }else if(type.equals("spawners")){
             if(slot>=PaperSpawners.MOBS.length)return;
@@ -1042,7 +1127,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private long sellValueFor(ItemStack item,String identifier){
         if(identifier==null)return 0;
-        if(identifier.equals(CLICK_VILLAGER_SHOP_ID))return 0;
+        if(identifier.equals(CLICK_VILLAGER_SHOP_ID)||identifier.equals(INFINITE_ROCKET_ID)||
+            identifier.equals(INFINITE_WATER_ID))return 0;
         // Ordinary vanilla items must remain sellable even when previously
         // disabled via the shop editor. Only special shop items can be disabled.
         boolean enchantedBook=item!=null&&item.getType()==Material.ENCHANTED_BOOK;
@@ -1410,6 +1496,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     openSell(p);return true;
                 }
                 case "customitems" ->{if(p.hasPermission("diddyblud.admin"))openCustom(p);return true;}
+                case "infiniterocket" ->{
+                    if(!p.hasPermission("diddyblud.admin"))return true;
+                    give(p,infiniteRocket());p.sendMessage("§aGiven an Infinite Rocket.");return true;
+                }
+                case "infinitewater" ->{
+                    if(!p.hasPermission("diddyblud.admin"))return true;
+                    give(p,infiniteWater());p.sendMessage("§aGiven an Infinite Water Bucket.");return true;
+                }
                 case "3x3pickaxe" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
                     give(p,infiniteAreaPickaxe());
