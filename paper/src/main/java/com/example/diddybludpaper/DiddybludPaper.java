@@ -8,6 +8,9 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.block.Block;
+import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.*;
@@ -40,6 +43,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     // Captured ClickVillagers head retains the entire original ItemStack metadata.
     private ItemStack clickVillagerShopTemplate;
     private static final String CLICK_VILLAGER_SHOP_ID="CLICKVILLAGER_CAPTURED";
+    private static final String INFINITE_PICKAXE_ID="INFINITE_3X3_PICKAXE";
+    private boolean miningAdditionalBlocks=false;
     private final Map<Integer,Listing> auctions=new LinkedHashMap<>();
     private final Map<Integer,Order> orders=new LinkedHashMap<>();
     private final Map<UUID,Integer> sellTransactions=new HashMap<>();
@@ -52,7 +57,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Scoreboard> sidebars=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
     private UUID queuePlayer=null;
-    private NamespacedKey heartKey,spawnerKey,halloweenKey;
+    private NamespacedKey heartKey,spawnerKey,halloweenKey,areaPickaxeKey;
     private File dataFile;
     private PaperSpawners spawners;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
@@ -65,6 +70,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         heartKey=new NamespacedKey(this,"heart");
         spawnerKey=new NamespacedKey(this,"spawner_type");
         halloweenKey=new NamespacedKey(this,"halloween_filler");
+        areaPickaxeKey=new NamespacedKey(this,"infinite_3x3_pickaxe");
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
         for(World world:getServer().getWorlds())setRadarOff(world);
@@ -136,6 +142,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             "combat,NETHERITE_HELMET,58000,9500","combat,NETHERITE_CHESTPLATE,80000,13000",
             "combat,NETHERITE_LEGGINGS,70000,11500","combat,NETHERITE_BOOTS,50000,8200",
             "combat,BOW,700,110","combat,ARROW,45,8","combat,HEART,75000,15000",
+            "combat,INFINITE_3X3_PICKAXE,150000,25000",
             "drops,BLAZE_ROD,450,18","drops,BONE,75,6","drops,ROTTEN_FLESH,35,4",
             "drops,GUNPOWDER,300,12","drops,STRING,100,7","drops,ENDER_PEARL,950,14",
             "drops,SLIME_BALL,340,55","drops,SPIDER_EYE,80,12","drops,LEATHER,125,24",
@@ -160,7 +167,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         };
         for(String row:rows){
             String[] x=row.split(",");
-            if(!x[1].equals("HEART") && Material.matchMaterial(x[1])==null)continue;
+            if(!x[1].equals("HEART")&&!x[1].equals(INFINITE_PICKAXE_ID)&&Material.matchMaterial(x[1])==null)continue;
             buy.putIfAbsent(x[1],Long.parseLong(x[2]));
             sell.putIfAbsent(x[1],Long.parseLong(x[3]));
             assignments.putIfAbsent(x[1],x[0]);
@@ -365,9 +372,26 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             key.getKey().toLowerCase(Locale.ROOT).contains("clickvillager") ||
             key.getKey().toLowerCase(Locale.ROOT).contains("villager_data"));
     }
+    private boolean isInfiniteAreaPickaxe(ItemStack stack){
+        return stack!=null&&stack.getType()==Material.NETHERITE_PICKAXE&&stack.hasItemMeta()&&
+            stack.getItemMeta().getPersistentDataContainer().has(areaPickaxeKey,PersistentDataType.BYTE);
+    }
+    private ItemStack infiniteAreaPickaxe(){
+        ItemStack tool=new ItemStack(Material.NETHERITE_PICKAXE);
+        ItemMeta meta=tool.getItemMeta();
+        meta.setDisplayName("§d§lInfinite 3x3 Pickaxe");
+        meta.setLore(List.of("§7Mines a 3x3 square in one swing","§bUnbreakable §8• §7Infinite uses","§7Efficiency V • Unbreaking III"));
+        meta.setUnbreakable(true);
+        meta.addEnchant(org.bukkit.enchantments.Enchantment.EFFICIENCY,5,true);
+        meta.addEnchant(org.bukkit.enchantments.Enchantment.UNBREAKING,3,true);
+        meta.getPersistentDataContainer().set(areaPickaxeKey,PersistentDataType.BYTE,(byte)1);
+        tool.setItemMeta(meta);
+        return tool;
+    }
     private String id(ItemStack stack){
         if(stack==null||stack.getType().isAir())return null;
         if(isHeart(stack))return "HEART";
+        if(isInfiniteAreaPickaxe(stack))return INFINITE_PICKAXE_ID;
         if(isClickVillagerHead(stack))return CLICK_VILLAGER_SHOP_ID;
         if(spawners.mobFromItem(stack)!=null)return null; // never sell unique spawner as a vanilla item
         if(stack.getType()==Material.ENCHANTED_BOOK){
@@ -490,6 +514,49 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             });
         }
     }
+    @EventHandler(priority=EventPriority.HIGH,ignoreCancelled=true)
+    public void onAreaPickaxeBreak(BlockBreakEvent event){
+        if(miningAdditionalBlocks)return;
+        Player player=event.getPlayer();
+        if(player.getGameMode()==GameMode.CREATIVE||player.getGameMode()==GameMode.SPECTATOR)return;
+        ItemStack tool=player.getInventory().getItemInMainHand();
+        if(!isInfiniteAreaPickaxe(tool))return;
+        Block center=event.getBlock();
+        if(!center.isPreferredTool(tool))return;
+
+        // Face-aligned plane: walls use X/Y or Z/Y, floors/ceilings X/Z.
+        var dir=player.getEyeLocation().getDirection();
+        double ax=Math.abs(dir.getX()),ay=Math.abs(dir.getY()),az=Math.abs(dir.getZ());
+        int normal=ay>=ax&&ay>=az?1:ax>=az?0:2;
+        miningAdditionalBlocks=true;
+        try{
+            for(int a=-1;a<=1;a++)for(int b=-1;b<=1;b++){
+                if(a==0&&b==0)continue;
+                int dx=normal==0?0:a;
+                int dy=normal==1?0:(normal==0?a:b);
+                int dz=normal==2?0:(normal==0?b:a);
+                Block other=center.getRelative(dx,dy,dz);
+                Material type=other.getType();
+                // Don't destroy containers, tile entities, unbreakable blocks,
+                // liquids, placed spawners, or player-placed interactive devices.
+                if(!type.isBlock()||!type.isSolid()||other.getState() instanceof org.bukkit.block.TileState||
+                    type==Material.BEDROCK||type==Material.BARRIER||
+                    type==Material.END_PORTAL_FRAME||type==Material.REINFORCED_DEEPSLATE||
+                    type==Material.OBSIDIAN&&center.getType()!=Material.OBSIDIAN||
+                    !other.isPreferredTool(tool))continue;
+                BlockBreakEvent secondary=new BlockBreakEvent(other,player);
+                Bukkit.getPluginManager().callEvent(secondary);
+                if(secondary.isCancelled())continue;
+                if(secondary.isDropItems()){
+                    for(ItemStack drop:other.getDrops(tool,player))
+                        other.getWorld().dropItemNaturally(other.getLocation(),drop);
+                }
+                other.setType(Material.AIR,false);
+            }
+        }finally{
+            miningAdditionalBlocks=false;
+        }
+    }
     private Inventory menu(String kind,int page,UUID owner){
         MenuHolder h=new MenuHolder(kind,page,owner);
         String title=kind.startsWith("vault:") ? "§6§lHaunted Vault §8#"+kind.substring(6)
@@ -599,6 +666,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         p.openInventory(inv);
     }
     private ItemStack shopItem(String id){
+        if(id.equals(INFINITE_PICKAXE_ID))return infiniteAreaPickaxe();
         if(id.equals(CLICK_VILLAGER_SHOP_ID)){
             if(clickVillagerShopTemplate==null)return null;
             ItemStack clone=clickVillagerShopTemplate.clone();
@@ -652,7 +720,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private void openCustom(Player p){
         Inventory inv=menu("customitems",0,p.getUniqueId());
-        inv.setItem(10,heart(1));String[] mobs=PaperSpawners.MOBS;
+        inv.setItem(10,heart(1));
+        inv.setItem(20,infiniteAreaPickaxe());
+        String[] mobs=PaperSpawners.MOBS;
         for(int i=0;i<mobs.length;i++)inv.setItem(11+i,spawners.spawner(mobs[i],1));
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
@@ -864,6 +934,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }else if(type.equals("customitems")){
             if(!p.hasPermission("diddyblud.admin"))return;
             if(slot==10)give(p,heart(1));
+            else if(slot==20)give(p,infiniteAreaPickaxe());
             else if(slot>=11&&slot<11+PaperSpawners.MOBS.length)give(p,spawners.spawner(PaperSpawners.MOBS[slot-11],1));
         }else if(type.equals("spawners")){
             if(slot>=PaperSpawners.MOBS.length)return;
@@ -1339,6 +1410,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     openSell(p);return true;
                 }
                 case "customitems" ->{if(p.hasPermission("diddyblud.admin"))openCustom(p);return true;}
+                case "3x3pickaxe" ->{
+                    if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
+                    give(p,infiniteAreaPickaxe());
+                    p.sendMessage("§aGiven an Infinite 3x3 Pickaxe.");
+                    return true;
+                }
                 case "ah","auction" ->{
                     if(args.length==2&&args[0].equalsIgnoreCase("sell")){
                         long cost=parseAmount(args[1]);ItemStack hand=p.getInventory().getItemInMainHand();
