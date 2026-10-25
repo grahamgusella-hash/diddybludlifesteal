@@ -10,6 +10,7 @@ import org.bukkit.event.*;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import com.destroystokyo.paper.event.player.PlayerElytraBoostEvent;
 import org.bukkit.block.Block;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.event.inventory.*;
@@ -445,25 +446,32 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(player.getGameMode()==GameMode.CREATIVE||player.getGameMode()==GameMode.SPECTATOR)return;
         ItemStack original=event.getItem();
         if(!isInfiniteRocket(original))return;
+        if(player.isGliding())return; // handled by Elytra-specific event
         // Let vanilla launch the rocket normally, including Elytra boosts.
         // Return the single consumed rocket on the next tick.
         ItemStack snapshot=original.clone();
         getServer().getScheduler().runTask(this,()->
             restoreSpecialHand(player,hand,snapshot,Material.AIR));
     }
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)
+    @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true)
+    public void onInfiniteElytraBoost(PlayerElytraBoostEvent event){
+        if(isInfiniteRocket(event.getItemStack()))
+            event.setShouldConsume(false);
+    }
+    @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true)
     public void onInfiniteWaterPlace(PlayerBucketEmptyEvent event){
         Player player=event.getPlayer();
         if(player.getGameMode()==GameMode.CREATIVE||player.getGameMode()==GameMode.SPECTATOR)return;
         EquipmentSlot hand=event.getHand();
         if(hand!=EquipmentSlot.HAND&&hand!=EquipmentSlot.OFF_HAND)return;
-        ItemStack original=event.getItemStack();
+        ItemStack original=hand==EquipmentSlot.OFF_HAND?
+            player.getInventory().getItemInOffHand():player.getInventory().getItemInMainHand();
         if(!isInfiniteWater(original))return;
-        ItemStack snapshot=original.clone();
-        // Vanilla performs the placement and turns the water bucket into an
-        // empty bucket. Afterward restore the tagged water bucket to the same hand.
-        getServer().getScheduler().runTask(this,()->
-            restoreSpecialHand(player,hand,snapshot,Material.BUCKET));
+        // The bucket event's getItemStack() is the replacement after placement.
+        // Keep our fully tagged water bucket as that replacement.
+        ItemStack restored=original.clone();
+        restored.setAmount(1);
+        event.setItemStack(restored);
     }
     private String id(ItemStack stack){
         if(stack==null||stack.getType().isAir())return null;
