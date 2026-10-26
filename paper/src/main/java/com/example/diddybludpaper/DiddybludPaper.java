@@ -1160,6 +1160,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
         if(type.equals("kits")||type.equals("kitranks")||type.equals("kiteditor")){
+            // The editor permits picking an item up from the player's bottom
+            // inventory. Clicking an editor slot copies the cursor item without
+            // consuming it. Shift-click into the top GUI is not permitted.
+            if(type.equals("kiteditor")&&slot>=54){
+                if(e.isShiftClick())e.setCancelled(true);
+                return;
+            }
             e.setCancelled(true);
             if(!(p.hasPermission("diddyblud.admin"))&& !type.equals("kits"))return;
             if(type.equals("kits")){
