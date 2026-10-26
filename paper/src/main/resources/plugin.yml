@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.11-paper
+version: 0.8.12-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -10,6 +10,9 @@ commands:
     aliases: [leaderboards]
     permission: diddyblud.admin
     usage: "/leaderboard <money|playtime|hearts> [remove]"
+  rank:
+    description: Create ranks and assign rank prefixes to players
+    permission: diddyblud.admin
   shop: {description: Open shop categories}
   shopedit:
     description: Manage shop listing deletion and editor instructions
