@@ -34,6 +34,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> leaderboardPlaytime=new HashMap<>(),leaderboardHearts=new HashMap<>();
     private final Map<String,String> rankLabels=new LinkedHashMap<>();
     private final Map<UUID,String> assignedRanks=new HashMap<>();
+    private record KitDefinition(String rank,ItemStack[] slots){}
+    private final Map<String,KitDefinition> kits=new LinkedHashMap<>();
+    private final Map<UUID,String> newKitNames=new HashMap<>();
+    private final Map<UUID,String> newKitRanks=new HashMap<>();
+    private final Map<UUID,ItemStack[]> editingKits=new HashMap<>();
+    private final Map<UUID,String> editingKitNames=new HashMap<>();
+    private final Map<UUID,Integer> kitPages=new HashMap<>();
+    private final Set<UUID> awaitingKitNames=new HashSet<>();
     private final Set<UUID> lifeLossProcessed=new HashSet<>();
     private LeaderboardHolograms leaderboards;
     private final Map<String,Long> buy=new LinkedHashMap<>(),sell=new LinkedHashMap<>(),shardPrices=new LinkedHashMap<>();
@@ -207,6 +215,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        ConfigurationSection loadedKits=y.getConfigurationSection("kits");
+        if(loadedKits!=null)for(String name:loadedKits.getKeys(false)){
+            String base="kits."+name+".";
+            String required=y.getString(base+"rank","everyone");
+            List<?> items=y.getList(base+"slots");
+            ItemStack[] slots=new ItemStack[41];
+            if(items!=null)for(int i=0;i<Math.min(41,items.size());i++)
+                if(items.get(i) instanceof ItemStack item)slots[i]=item.clone();
+            kits.put(name,new KitDefinition(required,slots));
+        }
         ConfigurationSection definedRanks=y.getConfigurationSection("rank-labels");
         if(definedRanks!=null)for(String key:definedRanks.getKeys(false))
             rankLabels.put(key,definedRanks.getString(key,key));
@@ -312,6 +330,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        kits.forEach((name,kit)->{
+            y.set("kits."+name+".rank",kit.rank());
+            y.set("kits."+name+".slots",Arrays.asList(cloneItems(kit.slots())));
+        });
         rankLabels.forEach((k,v)->y.set("rank-labels."+k,v));
         assignedRanks.forEach((k,v)->y.set("assigned-ranks."+k,v));
         shopNames.forEach((k,v)->y.set("shop-display-names."+k,v));
@@ -783,6 +805,100 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             inv.setItem(slot,decoration);
         }
     }
+    private void openKits(Player player,int page){
+        Inventory inv=Bukkit.createInventory(new MenuHolder("kits",page,player.getUniqueId()),54,"§6§lKits");
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        List<String> names=new ArrayList<>(kits.keySet());
+        for(int i=0;i<45&&page*45+i<names.size();i++){
+            String name=names.get(page*45+i);
+            KitDefinition kit=kits.get(name);
+            ItemStack icon=icon(Material.CHEST,"§e"+name);
+            ItemMeta meta=icon.getItemMeta();
+            boolean available=kit.rank().equals("everyone")||
+                kit.rank().equals(assignedRanks.get(player.getUniqueId()));
+            meta.setLore(List.of("§7Rank: §f"+kit.rank(),
+                available?"§aClick to claim":"§cRequires rank "+kit.rank(),
+                player.hasPermission("diddyblud.admin")?"§eShift-left: edit | Shift-right: delete":"§7"));
+            icon.setItemMeta(meta);
+            inv.setItem(i,icon);
+        }
+        inv.setItem(45,icon(Material.ARROW,"Previous page"));
+        inv.setItem(53,icon(Material.ARROW,"Next page"));
+        if(player.hasPermission("diddyblud.admin"))
+            inv.setItem(49,icon(Material.EMERALD_BLOCK,"§aCreate Kit"));
+        player.openInventory(inv);
+    }
+    private void openKitRanks(Player player,int page){
+        List<String> options=new ArrayList<>();
+        options.add("everyone");
+        options.addAll(rankLabels.keySet());
+        Inventory inv=Bukkit.createInventory(new MenuHolder("kitranks",page,player.getUniqueId()),54,
+            "§6Choose Kit Rank");
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<45&&page*45+i<options.size();i++){
+            String rank=options.get(page*45+i);
+            inv.setItem(i,icon(rank.equals("everyone")?Material.GRASS_BLOCK:Material.NAME_TAG,
+                "§e"+(rank.equals("everyone")?"Everyone (no rank)":rank)));
+        }
+        inv.setItem(45,icon(Material.ARROW,"Previous page"));
+        inv.setItem(53,icon(Material.ARROW,"Next page"));
+        player.openInventory(inv);
+    }
+    private void openKitEditor(Player player,String kitName,String rank,ItemStack[] initial){
+        ItemStack[] template=cloneItems(initial);
+        editingKits.put(player.getUniqueId(),template);
+        editingKitNames.put(player.getUniqueId(),kitName);
+        newKitRanks.put(player.getUniqueId(),rank);
+        Inventory inv=Bukkit.createInventory(new MenuHolder("kiteditor",0,player.getUniqueId()),54,
+            "§6Edit Kit: "+kitName.substring(0,Math.min(15,kitName.length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<41;i++)if(template[i]!=null)inv.setItem(i,template[i].clone());
+        inv.setItem(41,icon(Material.PAPER,"§7Slots 0–35: inventory"));
+        inv.setItem(42,icon(Material.IRON_CHESTPLATE,"§7Slots 36–39: armor"));
+        inv.setItem(43,icon(Material.SHIELD,"§7Slot 40: off-hand"));
+        inv.setItem(49,icon(Material.EMERALD_BLOCK,"§aSave Kit"));
+        inv.setItem(53,icon(Material.BARRIER,"§cCancel"));
+        player.openInventory(inv);
+    }
+    private void applyKit(Player player,String name){
+        KitDefinition kit=kits.get(name);
+        if(kit==null){player.sendMessage("§cThat kit no longer exists.");return;}
+        if(!kit.rank().equals("everyone")&&!kit.rank().equals(assignedRanks.get(player.getUniqueId()))){
+            player.sendMessage("§cYou need the "+kit.rank()+" rank to claim this kit.");return;
+        }
+        PlayerInventory inventory=player.getInventory();
+        ItemStack[] slots=kit.slots();
+        for(int i=0;i<41;i++){
+            ItemStack incoming=slots[i];
+            if(incoming==null||incoming.getType().isAir())continue;
+            // Stored order: 0–35 inventory, 36–39 armor (boots/leggings/chest/helmet),
+            // 40 off-hand. Displaced items are relocated, or dropped if no space.
+            ItemStack displaced;
+            if(i<36)displaced=inventory.getItem(i);
+            else if(i==36)displaced=inventory.getBoots();
+            else if(i==37)displaced=inventory.getLeggings();
+            else if(i==38)displaced=inventory.getChestplate();
+            else if(i==39)displaced=inventory.getHelmet();
+            else displaced=inventory.getItemInOffHand();
+            if(i<36)inventory.setItem(i,null);
+            else if(i==36)inventory.setBoots(null);
+            else if(i==37)inventory.setLeggings(null);
+            else if(i==38)inventory.setChestplate(null);
+            else if(i==39)inventory.setHelmet(null);
+            else inventory.setItemInOffHand(null);
+            if(displaced!=null&&!displaced.getType().isAir()){
+                for(ItemStack overflow:inventory.addItem(displaced.clone()).values())
+                    player.getWorld().dropItemNaturally(player.getLocation(),overflow);
+            }
+            if(i<36)inventory.setItem(i,incoming.clone());
+            else if(i==36)inventory.setBoots(incoming.clone());
+            else if(i==37)inventory.setLeggings(incoming.clone());
+            else if(i==38)inventory.setChestplate(incoming.clone());
+            else if(i==39)inventory.setHelmet(incoming.clone());
+            else inventory.setItemInOffHand(incoming.clone());
+        }
+        player.sendMessage("§aClaimed kit "+name+".");
+    }
     private void openShop(Player p,int page,boolean admin){
         Inventory inv=menu(admin?"shopadmin":"shop",page,p.getUniqueId());
         List<String> shown=visibleCategories(page);
@@ -1047,6 +1163,77 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
+        if(type.equals("kits")||type.equals("kitranks")||type.equals("kiteditor")){
+            e.setCancelled(true);
+            if(!(p.hasPermission("diddyblud.admin"))&& !type.equals("kits"))return;
+            if(type.equals("kits")){
+                int page=h.page;
+                if(slot==45){openKits(p,Math.max(0,page-1));return;}
+                if(slot==53){openKits(p,page+1);return;}
+                if(slot==49&&p.hasPermission("diddyblud.admin")){
+                    awaitingKitNames.add(p.getUniqueId());p.closeInventory();
+                    p.sendMessage("§eType a new kit name in chat, or 'cancel'.");return;
+                }
+                if(slot>=45)return;
+                List<String> all=new ArrayList<>(kits.keySet());
+                int index=page*45+slot;
+                if(index>=all.size())return;
+                String name=all.get(index);
+                if(p.hasPermission("diddyblud.admin")&&e.isShiftClick()){
+                    if(e.isRightClick()){
+                        kits.remove(name);save();openKits(p,page);
+                        p.sendMessage("§aDeleted kit "+name+".");return;
+                    }
+                    KitDefinition definition=kits.get(name);
+                    openKitEditor(p,name,definition.rank(),definition.slots());return;
+                }
+                p.closeInventory();applyKit(p,name);return;
+            }
+            if(type.equals("kitranks")){
+                if(slot==45){openKitRanks(p,Math.max(0,h.page-1));return;}
+                if(slot==53){openKitRanks(p,h.page+1);return;}
+                if(slot>=45)return;
+                List<String> available=new ArrayList<>();
+                available.add("everyone");available.addAll(rankLabels.keySet());
+                int index=h.page*45+slot;
+                if(index>=available.size())return;
+                String name=newKitNames.remove(p.getUniqueId());
+                if(name==null)return;
+                openKitEditor(p,name,available.get(index),new ItemStack[41]);
+                return;
+            }
+            if(type.equals("kiteditor")){
+                if(slot==53){
+                    editingKits.remove(p.getUniqueId());
+                    editingKitNames.remove(p.getUniqueId());
+                    newKitRanks.remove(p.getUniqueId());
+                    p.closeInventory();p.sendMessage("§eKit changes cancelled.");return;
+                }
+                if(slot==49){
+                    ItemStack[] edited=editingKits.remove(p.getUniqueId());
+                    String name=editingKitNames.remove(p.getUniqueId());
+                    String rank=newKitRanks.remove(p.getUniqueId());
+                    if(edited==null||name==null||rank==null)return;
+                    kits.put(name,new KitDefinition(rank,cloneItems(edited)));
+                    save();p.sendMessage("§aSaved "+name+" kit for "+rank+".");
+                    openKits(p,0);return;
+                }
+                if(slot>=41)return;
+                ItemStack[] edited=editingKits.get(p.getUniqueId());
+                if(edited==null)return;
+                if(e.isRightClick())edited[slot]=null;
+                else{
+                    ItemStack cursor=e.getCursor();
+                    if(cursor==null||cursor.getType().isAir()){
+                        p.sendMessage("§eHold an item on your cursor, then left-click the kit slot.");return;
+                    }
+                    edited[slot]=cursor.clone();
+                }
+                e.getView().getTopInventory().setItem(slot,
+                    edited[slot]==null?null:edited[slot].clone());
+                return;
+            }
+        }
         if(type.startsWith("vault:"))return;
         if(type.equals("sell")){
             if(slot>=18&&slot<27){e.setCancelled(true);
@@ -1639,15 +1826,43 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onDrag(InventoryDragEvent e){
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.startsWith("vault:"))return;
+        if(h.kind.equals("kits")||h.kind.equals("kitranks")||h.kind.equals("kiteditor")){
+            e.setCancelled(true);return;
+        }
         if(h.kind.equals("sell")){
             for(int slot:e.getRawSlots())if(slot>=18&&slot<27){e.setCancelled(true);return;}
             return;
         }
         e.setCancelled(true);
     }
+    @EventHandler(priority=EventPriority.HIGH)
+    public void kitNameChat(AsyncPlayerChatEvent event){
+        UUID uuid=event.getPlayer().getUniqueId();
+        if(!awaitingKitNames.contains(uuid))return;
+        event.setCancelled(true);
+        String name=event.getMessage().trim().toLowerCase(Locale.ROOT);
+        getServer().getScheduler().runTask(this,()->{
+            awaitingKitNames.remove(uuid);
+            Player player=Bukkit.getPlayer(uuid);
+            if(player==null)return;
+            if(name.equals("cancel")){player.sendMessage("§eKit creation cancelled.");return;}
+            if(!name.matches("[a-z0-9_-]{1,24}")){
+                player.sendMessage("§cKit name must be 1–24 letters, numbers, _ or -.");return;
+            }
+            if(kits.containsKey(name)){player.sendMessage("§cThat kit already exists.");return;}
+            newKitNames.put(uuid,name);
+            openKitRanks(player,0);
+        });
+    }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
         if(cmd.equals("rank"))return rankCommand(sender,args);
+        if(cmd.equals("kits")||cmd.equals("kit")){
+            if(!(sender instanceof Player player)){
+                sender.sendMessage("§cUse /kits in-game.");return true;
+            }
+            openKits(player,0);return true;
+        }
         if(cmd.equals("leaderboard")||cmd.equals("leaderboards")){
             if(!(sender instanceof Player player)){sender.sendMessage("Use this command in-game.");return true;}
             if(!player.hasPermission("diddyblud.admin")){
