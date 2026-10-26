@@ -32,6 +32,8 @@ import java.util.*;
 public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> cash=new HashMap<>(),shards=new HashMap<>();
     private final Map<UUID,Long> leaderboardPlaytime=new HashMap<>(),leaderboardHearts=new HashMap<>();
+    private final Map<String,String> rankLabels=new LinkedHashMap<>();
+    private final Map<UUID,String> assignedRanks=new HashMap<>();
     private final Set<UUID> lifeLossProcessed=new HashSet<>();
     private LeaderboardHolograms leaderboards;
     private final Map<String,Long> buy=new LinkedHashMap<>(),sell=new LinkedHashMap<>(),shardPrices=new LinkedHashMap<>();
@@ -97,6 +99,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getScheduler().runTaskTimer(this,this::tickShardRewards,20L,20L);
         getServer().getScheduler().runTaskTimer(this,()->leaderboards.refresh(),40L,400L);
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
+        refreshAllRanks();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
     }
     @Override public void onDisable(){
@@ -204,6 +207,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        ConfigurationSection definedRanks=y.getConfigurationSection("rank-labels");
+        if(definedRanks!=null)for(String key:definedRanks.getKeys(false))
+            rankLabels.put(key,definedRanks.getString(key,key));
+        ConfigurationSection assigned=y.getConfigurationSection("assigned-ranks");
+        if(assigned!=null)for(String key:assigned.getKeys(false)){
+            try{assignedRanks.put(UUID.fromString(key),assigned.getString(key));}
+            catch(IllegalArgumentException ignored){}
+        }
         ItemStack storedVillager=y.getItemStack("clickvillager-shop-template");
         if(isClickVillagerHead(storedVillager)){
             clickVillagerShopTemplate=storedVillager.clone();
@@ -301,6 +312,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        rankLabels.forEach((k,v)->y.set("rank-labels."+k,v));
+        assignedRanks.forEach((k,v)->y.set("assigned-ranks."+k,v));
         shopNames.forEach((k,v)->y.set("shop-display-names."+k,v));
         y.set("category-order",new ArrayList<>(categoryOrder));
         y.set("item-order",new ArrayList<>(itemOrder));
@@ -1436,6 +1449,82 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(type.equals("playtime"))return new HashMap<>(leaderboardPlaytime);
         return new HashMap<>(leaderboardHearts);
     }
+    // Every player uses a private scoreboard for the Lifesteal sidebar.
+    // Add the same rank teams to every scoreboard so everyone sees prefixes.
+    private void updateRankTeams(Scoreboard board){
+        for(Team team:new ArrayList<>(board.getTeams()))
+            if(team.getName().startsWith("dbr_"))team.unregister();
+        for(Player target:Bukkit.getOnlinePlayers()){
+            String rank=assignedRanks.get(target.getUniqueId());
+            if(rank==null||!rankLabels.containsKey(rank))continue;
+            String label=ChatColor.translateAlternateColorCodes('&',rankLabels.get(rank));
+            String teamName="dbr_"+target.getUniqueId().toString().replace("-","").substring(0,12);
+            Team team=board.registerNewTeam(teamName);
+            team.setPrefix(label+" §r");
+            team.addEntry(target.getName());
+        }
+    }
+    private void updateRankTabName(Player player){
+        String id=assignedRanks.get(player.getUniqueId());
+        String label=id==null?null:rankLabels.get(id);
+        player.setPlayerListName(label==null?player.getName():
+            ChatColor.translateAlternateColorCodes('&',label)+" §r"+player.getName());
+    }
+    private void refreshAllRanks(){
+        for(Player viewer:Bukkit.getOnlinePlayers()){
+            Scoreboard board=sidebars.get(viewer.getUniqueId());
+            if(board!=null)updateRankTeams(board);
+            updateRankTabName(viewer);
+        }
+    }
+    private boolean rankCommand(CommandSender sender,String[] args){
+        if(!sender.hasPermission("diddyblud.admin")){
+            sender.sendMessage("§cOnly OPs can manage ranks.");return true;
+        }
+        if(args.length==0||args[0].equalsIgnoreCase("help")){
+            sender.sendMessage("§e/rank create <id> <display name> (supports & color codes)");
+            sender.sendMessage("§e/rank set <onlinePlayer> <id>");
+            sender.sendMessage("§e/rank remove <onlinePlayer>");
+            sender.sendMessage("§e/rank delete <id> | /rank list");
+            return true;
+        }
+        String action=args[0].toLowerCase(Locale.ROOT);
+        if(action.equals("list")){
+            sender.sendMessage("§eRanks: "+(rankLabels.isEmpty()?"none":String.join(", ",rankLabels.keySet())));
+            return true;
+        }
+        if(action.equals("create")&&args.length>=3){
+            String id=args[1].toLowerCase(Locale.ROOT);
+            if(!id.matches("[a-z0-9_-]{1,24}")){
+                sender.sendMessage("§cRank ID must be 1–24 letters, numbers, _ or -.");return true;
+            }
+            String label=String.join(" ",Arrays.copyOfRange(args,2,args.length));
+            if(label.length()>48){
+                sender.sendMessage("§cRank display name is too long (48 characters maximum).");return true;
+            }
+            rankLabels.put(id,label);save();refreshAllRanks();
+            sender.sendMessage("§aCreated/updated rank "+id+".");return true;
+        }
+        if(action.equals("delete")&&args.length==2){
+            String id=args[1].toLowerCase(Locale.ROOT);
+            if(rankLabels.remove(id)==null){sender.sendMessage("§cUnknown rank.");return true;}
+            assignedRanks.values().removeIf(id::equals);
+            save();refreshAllRanks();
+            sender.sendMessage("§aDeleted rank "+id+".");return true;
+        }
+        if((action.equals("set")&&args.length==3)||(action.equals("remove")&&args.length==2)){
+            Player target=Bukkit.getPlayerExact(args[1]);
+            if(target==null){sender.sendMessage("§cPlayer must be online.");return true;}
+            if(action.equals("set")){
+                String id=args[2].toLowerCase(Locale.ROOT);
+                if(!rankLabels.containsKey(id)){sender.sendMessage("§cUnknown rank. Use /rank list.");return true;}
+                assignedRanks.put(target.getUniqueId(),id);
+            }else assignedRanks.remove(target.getUniqueId());
+            save();refreshAllRanks();
+            sender.sendMessage("§aUpdated rank for "+target.getName()+".");return true;
+        }
+        sender.sendMessage("§cInvalid syntax. Use /rank help.");return true;
+    }
     private void initializeSidebar(Player player){
         UUID uuid=player.getUniqueId();
         shardSecondsRemaining.putIfAbsent(uuid,SHARD_INTERVAL_SECONDS);
@@ -1459,7 +1548,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         board.getTeam("bottom").setPrefix("§8§m----------------");
         sidebars.put(uuid,board);
         updateSidebar(player);
+        updateRankTeams(board);
         player.setScoreboard(board);
+        updateRankTabName(player);
     }
     private void updateSidebar(Player p){
         Scoreboard board=sidebars.get(p.getUniqueId());
@@ -1531,7 +1622,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Let other join handlers finish first; recurring tick also repairs a
         // scoreboard replaced after this delayed first refresh.
         getServer().getScheduler().runTask(this,()->{
-            if(player.isOnline())initializeSidebar(player);
+            if(player.isOnline()){
+                initializeSidebar(player);
+                refreshAllRanks();
+            }
         });
     }
     @EventHandler public void onQuit(PlayerQuitEvent e){
@@ -1539,6 +1633,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         sidebars.remove(e.getPlayer().getUniqueId());
         shopSelections.remove(e.getPlayer().getUniqueId());
         lifeLossProcessed.remove(e.getPlayer().getUniqueId());
+        getServer().getScheduler().runTask(this,this::refreshAllRanks);
         save();
     }
     @EventHandler public void onDrag(InventoryDragEvent e){
@@ -1552,6 +1647,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("rank"))return rankCommand(sender,args);
         if(cmd.equals("leaderboard")||cmd.equals("leaderboards")){
             if(!(sender instanceof Player player)){sender.sendMessage("Use this command in-game.");return true;}
             if(!player.hasPermission("diddyblud.admin")){
