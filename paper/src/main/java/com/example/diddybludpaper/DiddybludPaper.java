@@ -880,22 +880,18 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             else if(i==38)displaced=inventory.getChestplate();
             else if(i==39)displaced=inventory.getHelmet();
             else displaced=inventory.getItemInOffHand();
-            if(i<36)inventory.setItem(i,null);
-            else if(i==36)inventory.setBoots(null);
-            else if(i==37)inventory.setLeggings(null);
-            else if(i==38)inventory.setChestplate(null);
-            else if(i==39)inventory.setHelmet(null);
-            else inventory.setItemInOffHand(null);
-            if(displaced!=null&&!displaced.getType().isAir()){
-                for(ItemStack overflow:inventory.addItem(displaced.clone()).values())
-                    player.getWorld().dropItemNaturally(player.getLocation(),overflow);
-            }
+            // Fill the destination first. Otherwise addItem() could put the
+            // displaced item back into its empty old slot, then overwrite it.
             if(i<36)inventory.setItem(i,incoming.clone());
             else if(i==36)inventory.setBoots(incoming.clone());
             else if(i==37)inventory.setLeggings(incoming.clone());
             else if(i==38)inventory.setChestplate(incoming.clone());
             else if(i==39)inventory.setHelmet(incoming.clone());
             else inventory.setItemInOffHand(incoming.clone());
+            if(displaced!=null&&!displaced.getType().isAir()){
+                for(ItemStack overflow:inventory.addItem(displaced.clone()).values())
+                    player.getWorld().dropItemNaturally(player.getLocation(),overflow);
+            }
         }
         player.sendMessage("§aClaimed kit "+name+".");
     }
