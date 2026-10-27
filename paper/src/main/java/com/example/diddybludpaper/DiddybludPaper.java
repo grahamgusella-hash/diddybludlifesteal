@@ -1748,6 +1748,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         if(args.length==0||args[0].equalsIgnoreCase("help")){
             sender.sendMessage("§e/rank create <id> <display name> (supports & color codes)");
+            sender.sendMessage("§e/rank color <id> <red|gold|green|blue|aqua|...|&a>");
             sender.sendMessage("§e/rank set <onlinePlayer> <id>");
             sender.sendMessage("§e/rank remove <onlinePlayer>");
             sender.sendMessage("§e/rank delete <id> | /rank list");
@@ -1769,6 +1770,30 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             rankLabels.put(id,label);save();refreshAllRanks();
             sender.sendMessage("§aCreated/updated rank "+id+".");return true;
+        }
+        if((action.equals("color")||action.equals("colour"))&&args.length==3){
+            String id=args[1].toLowerCase(Locale.ROOT);
+            String current=rankLabels.get(id);
+            if(current==null){sender.sendMessage("§cUnknown rank. Use /rank list.");return true;}
+            String choice=args[2].toLowerCase(Locale.ROOT).replace('-','_');
+            ChatColor color=null;
+            if(choice.matches("&[0-9a-f]")){
+                color=ChatColor.getByChar(choice.charAt(1));
+            }else{
+                try{color=ChatColor.valueOf(choice.toUpperCase(Locale.ROOT));}
+                catch(IllegalArgumentException ignored){}
+            }
+            if(color==null||!color.isColor()){
+                sender.sendMessage("§cUse a Minecraft color name like red, dark_red, gold, green,");
+                sender.sendMessage("§caqua, blue, light_purple, white, or a code like &a.");
+                return true;
+            }
+            // Remove old colors, but keep formatting such as bold (&l).
+            String plain=current.replaceAll("(?i)[&§][0-9a-f]","");
+            rankLabels.put(id,"&"+color.getChar()+plain);
+            save();refreshAllRanks();
+            sender.sendMessage("§aUpdated "+id+" rank color to "+color+choice+"§a.");
+            return true;
         }
         if(action.equals("delete")&&args.length==2){
             String id=args[1].toLowerCase(Locale.ROOT);
