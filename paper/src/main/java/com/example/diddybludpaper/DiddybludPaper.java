@@ -2252,6 +2252,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         cash.remove(playerId);
         shards.remove(playerId);
         homes.remove(playerId);
+        leaderboardPlaytime.put(playerId,0L);
+        leaderboardHearts.put(playerId,10L);
         shardSecondsRemaining.remove(playerId);
         requests.remove(playerId);
         requests.values().removeIf(playerId::equals);
@@ -2259,8 +2261,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         Player online=Bukkit.getPlayer(playerId);
         if(online!=null){
             clearWipedInventory(online);
+            setHearts(online,10);
             updateSidebar(online);
-            online.sendMessage("§cAn administrator has wiped your inventory, Ender Chest, homes, money and shards.");
+            online.sendMessage("§cAn administrator has wiped your inventory, Ender Chest, homes, money, shards, hearts and playtime.");
         }
     }
     private boolean wipeCommand(CommandSender sender,String[] args){
@@ -2297,9 +2300,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             targets.addAll(cash.keySet());
             targets.addAll(shards.keySet());
             targets.addAll(homes.keySet());
+            targets.addAll(leaderboardHearts.keySet());
+            targets.addAll(leaderboardPlaytime.keySet());
             targets.addAll(pendingInventoryWipes);
             for(UUID uuid:targets)wipePlayerData(uuid);
             save();
+            if(leaderboards!=null)leaderboards.refresh();
             sender.sendMessage("§aWiped "+targets.size()+
                 " player(s). Offline inventories and Ender Chests will clear on next login.");
             getLogger().warning(sender.getName()+" executed /wipe all for "+targets.size()+" players.");
@@ -2324,8 +2330,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         wipePlayerData(target.getUniqueId());
         save();
+        if(leaderboards!=null)leaderboards.refresh();
         sender.sendMessage("§aWiped "+target.getName()+
-            " (inventory, Ender Chest, homes, money, shards).");
+            " (inventory, Ender Chest, homes, money, shards, hearts, playtime).");
         getLogger().warning(sender.getName()+" wiped "+target.getName()+
             " ("+target.getUniqueId()+")");
         return true;
