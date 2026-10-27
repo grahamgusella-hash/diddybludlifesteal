@@ -2,6 +2,8 @@ package com.example.diddybludpaper;
 
 import org.bukkit.*;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.command.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -34,6 +36,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> leaderboardPlaytime=new HashMap<>(),leaderboardHearts=new HashMap<>();
     private final Map<String,String> rankLabels=new LinkedHashMap<>();
     private final Map<UUID,String> assignedRanks=new HashMap<>();
+    // Potion buffs and particles are per-rank, and are not permission grants.
+    private final Map<String,Map<String,Integer>> rankPotionEffects=new HashMap<>();
+    private final Map<String,String> rankParticleEffects=new HashMap<>();
+    private final Map<UUID,Map<String,Integer>> previouslyAppliedRankPotions=new HashMap<>();
     private record KitDefinition(String rank,ItemStack[] slots,Material icon){}
     private final Map<String,KitDefinition> kits=new LinkedHashMap<>();
     private final Map<UUID,String> newKitNames=new HashMap<>();
@@ -109,6 +115,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Update the player HUD and online-playtime reward once every second.
         getServer().getScheduler().runTaskTimer(this,this::tickShardRewards,20L,20L);
         getServer().getScheduler().runTaskTimer(this,()->leaderboards.refresh(),40L,400L);
+        getServer().getScheduler().runTaskTimer(this,this::refreshRankEffects,20L,80L);
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         refreshAllRanks();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
@@ -238,6 +245,23 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             try{assignedRanks.put(UUID.fromString(key),assigned.getString(key));}
             catch(IllegalArgumentException ignored){}
         }
+        ConfigurationSection allPotions=y.getConfigurationSection("rank-potions");
+        if(allPotions!=null)for(String rank:allPotions.getKeys(false)){
+            ConfigurationSection effects=allPotions.getConfigurationSection(rank);
+            if(effects==null)continue;
+            Map<String,Integer> parsed=new HashMap<>();
+            for(String effect:effects.getKeys(false)){
+                int level=effects.getInt(effect);
+                if(level>=1&&level<=10&&resolveRankPotion(effect)!=null)
+                    parsed.put(effect,level);
+            }
+            if(!parsed.isEmpty())rankPotionEffects.put(rank,parsed);
+        }
+        ConfigurationSection particles=y.getConfigurationSection("rank-particles");
+        if(particles!=null)for(String rank:particles.getKeys(false)){
+            String particle=particles.getString(rank);
+            if(resolveRankParticle(particle)!=null)rankParticleEffects.put(rank,particle);
+        }
         ItemStack storedVillager=y.getItemStack("clickvillager-shop-template");
         if(isClickVillagerHead(storedVillager)){
             clickVillagerShopTemplate=storedVillager.clone();
@@ -342,6 +366,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         });
         rankLabels.forEach((k,v)->y.set("rank-labels."+k,v));
         assignedRanks.forEach((k,v)->y.set("assigned-ranks."+k,v));
+        rankPotionEffects.forEach((rank,effects)->effects.forEach((effect,level)->
+            y.set("rank-potions."+rank+"."+effect,level)));
+        rankParticleEffects.forEach((rank,particle)->y.set("rank-particles."+rank,particle));
         shopNames.forEach((k,v)->y.set("shop-display-names."+k,v));
         y.set("category-order",new ArrayList<>(categoryOrder));
         y.set("item-order",new ArrayList<>(itemOrder));
@@ -1742,6 +1769,75 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             updateRankTabName(viewer);
         }
     }
+    private PotionEffectType resolveRankPotion(String id){
+        if(id==null)return null;
+        // Namespaced lookup accepts Minecraft's canonical potion IDs, for
+        // example speed, haste, strength, night_vision and fire_resistance.
+        return Registry.EFFECT.get(NamespacedKey.minecraft(id.toLowerCase(Locale.ROOT)));
+    }
+    private Particle resolveRankParticle(String id){
+        if(id==null)return null;
+        try{
+            Particle particle=Particle.valueOf(id.toUpperCase(Locale.ROOT));
+            // These safe cosmetic particles have no special data payload.
+            return switch(particle){
+                case FLAME, SOUL_FIRE_FLAME, HEART, HAPPY_VILLAGER,
+                     END_ROD, ENCHANT, PORTAL, TOTEM_OF_UNDYING, CLOUD,
+                     CRIT, WITCH, NOTE, FIREWORK, GLOW, NAUTILUS -> particle;
+                default -> null;
+            };
+        }catch(IllegalArgumentException ex){return null;}
+    }
+    private void clearPreviousRankEffects(Player player){
+        Map<String,Integer> last=previouslyAppliedRankPotions.remove(player.getUniqueId());
+        if(last==null)return;
+        for(var entry:last.entrySet()){
+            PotionEffectType type=resolveRankPotion(entry.getKey());
+            if(type==null)continue;
+            PotionEffect active=player.getPotionEffect(type);
+            if(active!=null&&active.getAmplifier()==entry.getValue()-1&&
+                active.getDuration()<=220){
+                player.removePotionEffect(type);
+            }
+        }
+    }
+    private void refreshRankEffects(){
+        for(Player player:Bukkit.getOnlinePlayers()){
+            if(player.isDead())continue;
+            String rank=assignedRanks.get(player.getUniqueId());
+            Map<String,Integer> configured=rank==null?Map.of():
+                rankPotionEffects.getOrDefault(rank,Map.of());
+            Map<String,Integer> previous=previouslyAppliedRankPotions
+                .getOrDefault(player.getUniqueId(),Map.of());
+            for(var old:previous.entrySet()){
+                Integer next=configured.get(old.getKey());
+                if(next!=null&&next.equals(old.getValue()))continue;
+                PotionEffectType type=resolveRankPotion(old.getKey());
+                if(type==null)continue;
+                PotionEffect active=player.getPotionEffect(type);
+                if(active!=null&&active.getAmplifier()==old.getValue()-1&&
+                    active.getDuration()<=220)player.removePotionEffect(type);
+            }
+            Map<String,Integer> applied=new HashMap<>();
+            for(var entry:configured.entrySet()){
+                PotionEffectType type=resolveRankPotion(entry.getKey());
+                if(type==null)continue;
+                PotionEffect active=player.getPotionEffect(type);
+                int amplifier=entry.getValue()-1;
+                // Don't overwrite a stronger buff from a potion or another plugin.
+                if(active!=null&&active.getAmplifier()>amplifier)continue;
+                player.addPotionEffect(new PotionEffect(type,140,amplifier,true,false,true));
+                applied.put(entry.getKey(),entry.getValue());
+            }
+            if(applied.isEmpty())previouslyAppliedRankPotions.remove(player.getUniqueId());
+            else previouslyAppliedRankPotions.put(player.getUniqueId(),applied);
+            Particle particle=rank==null?null:resolveRankParticle(rankParticleEffects.get(rank));
+            if(particle!=null){
+                player.getWorld().spawnParticle(particle,
+                    player.getLocation().add(0,1,0),8,0.35,0.65,0.35,0.01);
+            }
+        }
+    }
     private boolean rankCommand(CommandSender sender,String[] args){
         if(!sender.hasPermission("diddyblud.admin")){
             sender.sendMessage("§cOnly OPs can manage ranks.");return true;
@@ -1749,6 +1845,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(args.length==0||args[0].equalsIgnoreCase("help")){
             sender.sendMessage("§e/rank create <id> <display name> (supports & color codes)");
             sender.sendMessage("§e/rank color <id> <red|gold|green|blue|aqua|...|&a>");
+            sender.sendMessage("§e/rank effect add <rank> <potion> [level 1–10]");
+            sender.sendMessage("§e/rank effect remove <rank> <potion> | /rank effect list <rank>");
+            sender.sendMessage("§e/rank particle <rank> <particle|none>");
             sender.sendMessage("§e/rank set <onlinePlayer> <id>");
             sender.sendMessage("§e/rank remove <onlinePlayer>");
             sender.sendMessage("§e/rank delete <id> | /rank list");
@@ -1795,11 +1894,79 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             sender.sendMessage("§aUpdated "+id+" rank color to "+color+choice+"§a.");
             return true;
         }
+        if(action.equals("effect")){
+            if(args.length<3){
+                sender.sendMessage("§e/rank effect add <rank> <effect> [level]");
+                sender.sendMessage("§e/rank effect remove <rank> <effect> | /rank effect list <rank>");
+                return true;
+            }
+            String operation=args[1].toLowerCase(Locale.ROOT);
+            String rank=args[2].toLowerCase(Locale.ROOT);
+            if(!rankLabels.containsKey(rank)){
+                sender.sendMessage("§cUnknown rank. Use /rank list.");return true;
+            }
+            if(operation.equals("list")&&args.length==3){
+                sender.sendMessage("§e"+rank+" potion effects: "+
+                    rankPotionEffects.getOrDefault(rank,Map.of()));
+                return true;
+            }
+            if(operation.equals("remove")&&args.length==4){
+                String potion=args[3].toLowerCase(Locale.ROOT);
+                Map<String,Integer> effects=rankPotionEffects.get(rank);
+                if(effects!=null){
+                    effects.remove(potion);
+                    if(effects.isEmpty())rankPotionEffects.remove(rank);
+                }
+                save();refreshRankEffects();
+                sender.sendMessage("§aRemoved "+potion+" from "+rank+".");return true;
+            }
+            if(operation.equals("add")&&(args.length==4||args.length==5)){
+                String potion=args[3].toLowerCase(Locale.ROOT);
+                if(resolveRankPotion(potion)==null){
+                    sender.sendMessage("§cUnknown potion effect. Examples: speed, haste,");
+                    sender.sendMessage("§cstrength, night_vision, fire_resistance, jump_boost.");
+                    return true;
+                }
+                int level=1;
+                if(args.length==5){
+                    try{level=Integer.parseInt(args[4]);}
+                    catch(NumberFormatException ex){
+                        sender.sendMessage("§cLevel must be 1–10.");return true;
+                    }
+                }
+                if(level<1||level>10){
+                    sender.sendMessage("§cLevel must be 1–10.");return true;
+                }
+                rankPotionEffects.computeIfAbsent(rank,k->new HashMap<>()).put(potion,level);
+                save();refreshRankEffects();
+                sender.sendMessage("§aAdded "+potion+" "+level+" to "+rank+".");return true;
+            }
+            sender.sendMessage("§cInvalid syntax. Use /rank help.");return true;
+        }
+        if(action.equals("particle")&&args.length==3){
+            String rank=args[1].toLowerCase(Locale.ROOT);
+            if(!rankLabels.containsKey(rank)){
+                sender.sendMessage("§cUnknown rank.");return true;
+            }
+            String particle=args[2].toUpperCase(Locale.ROOT);
+            if(particle.equals("NONE")||particle.equals("OFF")){
+                rankParticleEffects.remove(rank);
+            }else if(resolveRankParticle(particle)!=null){
+                rankParticleEffects.put(rank,particle);
+            }else{
+                sender.sendMessage("§cTry FLAME, HEART, END_ROD, PORTAL, ENCHANT,");
+                sender.sendMessage("§cTOTEM_OF_UNDYING, CLOUD, or NONE.");return true;
+            }
+            save();
+            sender.sendMessage("§aUpdated particle effect for "+rank+".");return true;
+        }
         if(action.equals("delete")&&args.length==2){
             String id=args[1].toLowerCase(Locale.ROOT);
             if(rankLabels.remove(id)==null){sender.sendMessage("§cUnknown rank.");return true;}
             assignedRanks.values().removeIf(id::equals);
-            save();refreshAllRanks();
+            rankPotionEffects.remove(id);
+            rankParticleEffects.remove(id);
+            save();refreshAllRanks();refreshRankEffects();
             sender.sendMessage("§aDeleted rank "+id+".");return true;
         }
         if((action.equals("set")&&args.length==3)||(action.equals("remove")&&args.length==2)){
@@ -1810,7 +1977,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 if(!rankLabels.containsKey(id)){sender.sendMessage("§cUnknown rank. Use /rank list.");return true;}
                 assignedRanks.put(target.getUniqueId(),id);
             }else assignedRanks.remove(target.getUniqueId());
-            save();refreshAllRanks();
+            save();refreshAllRanks();refreshRankEffects();
             sender.sendMessage("§aUpdated rank for "+target.getName()+".");return true;
         }
         sender.sendMessage("§cInvalid syntax. Use /rank help.");return true;
@@ -1923,6 +2090,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         sidebars.remove(e.getPlayer().getUniqueId());
         shopSelections.remove(e.getPlayer().getUniqueId());
         lifeLossProcessed.remove(e.getPlayer().getUniqueId());
+        previouslyAppliedRankPotions.remove(e.getPlayer().getUniqueId());
         getServer().getScheduler().runTask(this,this::refreshAllRanks);
         save();
     }
