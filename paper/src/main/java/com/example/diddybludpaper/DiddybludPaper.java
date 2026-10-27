@@ -1773,7 +1773,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(id==null)return null;
         // Namespaced lookup accepts Minecraft's canonical potion IDs, for
         // example speed, haste, strength, night_vision and fire_resistance.
-        return Registry.EFFECT.get(NamespacedKey.minecraft(id.toLowerCase(Locale.ROOT)));
+        return Registry.MOB_EFFECT.get(NamespacedKey.minecraft(id.toLowerCase(Locale.ROOT)));
     }
     private Particle resolveRankParticle(String id){
         if(id==null)return null;
