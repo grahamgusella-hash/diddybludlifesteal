@@ -68,6 +68,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Map<String,Location>> homes=new HashMap<>();
     private final Map<UUID,UUID> requests=new HashMap<>();
     private final Map<String,ItemStack[]> vaults=new HashMap<>();
+    private final Map<UUID,UUID> viewedInventories=new HashMap<>();
     // Captured ClickVillagers head retains the entire original ItemStack metadata.
     private ItemStack clickVillagerShopTemplate;
     private static final String CLICK_VILLAGER_SHOP_ID="CLICKVILLAGER_CAPTURED";
@@ -1192,6 +1193,51 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
+    private void openInventorySee(Player viewer,Player target){
+        for(var entry:viewedInventories.entrySet()){
+            if(entry.getValue().equals(target.getUniqueId())&&!entry.getKey().equals(viewer.getUniqueId())){
+                viewer.sendMessage("§cAnother admin is already viewing that inventory.");return;
+            }
+        }
+        Inventory inv=Bukkit.createInventory(new MenuHolder("invsee",0,viewer.getUniqueId()),
+            54,"§6Inventory: "+target.getName().substring(0,Math.min(16,target.getName().length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<36;i++){
+            ItemStack item=target.getInventory().getItem(i);
+            if(item!=null)inv.setItem(i,item.clone());
+        }
+        ItemStack[] armor={
+            target.getInventory().getBoots(),target.getInventory().getLeggings(),
+            target.getInventory().getChestplate(),target.getInventory().getHelmet(),
+            target.getInventory().getItemInOffHand()
+        };
+        for(int i=0;i<5;i++)if(armor[i]!=null)inv.setItem(36+i,armor[i].clone());
+        inv.setItem(45,icon(Material.PAPER,"§7Slots 0–35: inventory / hotbar"));
+        inv.setItem(46,icon(Material.IRON_CHESTPLATE,"§7Slots 36–39: boots, leggings, chest, helmet"));
+        inv.setItem(47,icon(Material.SHIELD,"§7Slot 40: off-hand"));
+        inv.setItem(53,icon(Material.BARRIER,"§cClose"));
+        viewedInventories.put(viewer.getUniqueId(),target.getUniqueId());
+        viewer.openInventory(inv);
+    }
+    private void syncInventorySee(Player viewer,Inventory inventory){
+        UUID targetId=viewedInventories.get(viewer.getUniqueId());
+        Player target=targetId==null?null:Bukkit.getPlayer(targetId);
+        if(target==null)return;
+        PlayerInventory pi=target.getInventory();
+        for(int i=0;i<36;i++){
+            ItemStack item=inventory.getItem(i);
+            pi.setItem(i,item==null?null:item.clone());
+        }
+        pi.setBoots(cloneOrNull(inventory.getItem(36)));
+        pi.setLeggings(cloneOrNull(inventory.getItem(37)));
+        pi.setChestplate(cloneOrNull(inventory.getItem(38)));
+        pi.setHelmet(cloneOrNull(inventory.getItem(39)));
+        pi.setItemInOffHand(cloneOrNull(inventory.getItem(40)));
+        target.updateInventory();
+    }
+    private ItemStack cloneOrNull(ItemStack value){
+        return value==null||value.getType().isAir()?null:value.clone();
+    }
     private void openVault(Player p,int number){
         String key=p.getUniqueId()+"-"+number;
         Inventory inv=menu("vault:"+number,0,p.getUniqueId());
@@ -1241,6 +1287,25 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
+        if(type.equals("invsee")){
+            if(!p.hasPermission("diddyblud.admin")){e.setCancelled(true);return;}
+            if(slot>=41&&slot<54){
+                e.setCancelled(true);
+                if(slot==53)p.closeInventory();
+                return;
+            }
+            if((e.isShiftClick()&&slot>=54)||
+                e.getClick()==ClickType.NUMBER_KEY||
+                e.getClick()==ClickType.DOUBLE_CLICK||
+                e.getClick()==ClickType.SWAP_OFFHAND){
+                e.setCancelled(true);return;
+            }
+            getServer().getScheduler().runTask(this,()->
+                {if(viewedInventories.containsKey(p.getUniqueId())&&
+                    p.getOpenInventory().getTopInventory()==h.getInventory())
+                        syncInventorySee(p,h.getInventory());});
+            return;
+        }
         if(type.equals("kits")||type.equals("kitranks")||type.equals("kiteditor")){
             // The editor permits picking an item up from the player's bottom
             // inventory. Clicking an editor slot copies the cursor item without
@@ -1711,6 +1776,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void close(InventoryCloseEvent e){
         if(!(e.getPlayer() instanceof Player p))return;
         if(!(e.getInventory().getHolder() instanceof MenuHolder h))return;
+        if(h.kind.equals("invsee")){
+            syncInventorySee(p,e.getInventory());
+            viewedInventories.remove(p.getUniqueId());
+            return;
+        }
         if(h.kind.equals("sell")){
             // An ordinary close also sells accepted items; the Cancel button
             // deliberately bypasses sale and returns the full inventory.
@@ -2100,6 +2170,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @EventHandler public void onQuit(PlayerQuitEvent e){
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
+        for(var entry:new ArrayList<>(viewedInventories.entrySet())){
+            if(entry.getValue().equals(e.getPlayer().getUniqueId())){
+                Player viewer=Bukkit.getPlayer(entry.getKey());
+                if(viewer!=null)viewer.closeInventory();
+            }
+        }
+        viewedInventories.remove(e.getPlayer().getUniqueId());
         sidebars.remove(e.getPlayer().getUniqueId());
         shopSelections.remove(e.getPlayer().getUniqueId());
         lifeLossProcessed.remove(e.getPlayer().getUniqueId());
@@ -2110,6 +2187,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onDrag(InventoryDragEvent e){
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.startsWith("vault:"))return;
+        if(h.kind.equals("invsee")){
+            for(int slot:e.getRawSlots())if(slot>=41&&slot<54){
+                e.setCancelled(true);return;
+            }
+            if(e.getWhoClicked() instanceof Player viewer){
+                getServer().getScheduler().runTask(this,()->
+                    {if(viewedInventories.containsKey(viewer.getUniqueId()))
+                        syncInventorySee(viewer,e.getInventory());});
+            }
+            return;
+        }
         if(h.kind.equals("kits")||h.kind.equals("kitranks")||h.kind.equals("kiteditor")){
             e.setCancelled(true);return;
         }
@@ -2244,6 +2332,32 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("echest")){
+            if(!(sender instanceof Player player)){
+                sender.sendMessage("§cUse this command in-game.");return true;
+            }
+            if(args.length==0){player.openInventory(player.getEnderChest());return true;}
+            if(args.length==1&&player.hasPermission("diddyblud.admin")){
+                Player target=Bukkit.getPlayerExact(args[0]);
+                if(target==null){player.sendMessage("§cPlayer must be online.");return true;}
+                player.openInventory(target.getEnderChest());return true;
+            }
+            player.sendMessage("§eUsage: /echest [online player (OP only)]");return true;
+        }
+        if(cmd.equals("invsee")){
+            if(!(sender instanceof Player player)){
+                sender.sendMessage("§cUse this command in-game.");return true;
+            }
+            if(!player.hasPermission("diddyblud.admin")){
+                player.sendMessage("§cOnly OPs can use /invsee.");return true;
+            }
+            if(args.length!=1){player.sendMessage("§eUsage: /invsee <player>");return true;}
+            Player target=Bukkit.getPlayerExact(args[0]);
+            if(target==null||target.equals(player)){
+                player.sendMessage("§cChoose another online player.");return true;
+            }
+            openInventorySee(player,target);return true;
+        }
         if(cmd.equals("wipe"))return wipeCommand(sender,args);
         if(cmd.equals("rank"))return rankCommand(sender,args);
         if(cmd.equals("kits")||cmd.equals("kit")){
