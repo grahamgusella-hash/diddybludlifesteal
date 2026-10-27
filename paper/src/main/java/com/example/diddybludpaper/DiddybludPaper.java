@@ -84,6 +84,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private static final long SHARD_INTERVAL_SECONDS=30L*60L;
     private static final long SHARD_REWARD=10L;
     private final Map<UUID,Long> shardSecondsRemaining=new HashMap<>();
+    // Offline inventories and Ender Chests are cleared on their next login.
+    private final Set<UUID> pendingInventoryWipes=new HashSet<>();
+    private final Map<UUID,Long> pendingWipeAllConfirmation=new HashMap<>();
     private final Map<UUID,Scoreboard> sidebars=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
     private UUID queuePlayer=null;
@@ -225,6 +228,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        for(String id:y.getStringList("pending-inventory-wipes")){
+            try{pendingInventoryWipes.add(UUID.fromString(id));}
+            catch(IllegalArgumentException ignored){}
+        }
         ConfigurationSection loadedKits=y.getConfigurationSection("kits");
         if(loadedKits!=null)for(String name:loadedKits.getKeys(false)){
             String base="kits."+name+".";
@@ -359,6 +366,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        y.set("pending-inventory-wipes",
+            pendingInventoryWipes.stream().map(UUID::toString).toList());
         kits.forEach((name,kit)->{
             y.set("kits."+name+".rank",kit.rank());
             y.set("kits."+name+".icon",kit.icon().name());
@@ -2073,6 +2082,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @EventHandler public void onJoin(PlayerJoinEvent event){
         Player player=event.getPlayer();
+        if(pendingInventoryWipes.contains(player.getUniqueId())){
+            clearWipedInventory(player);
+            save();
+        }
         int savedHearts=maxHearts(player);
         setHearts(player,savedHearts);
         leaderboardPlaytime.putIfAbsent(player.getUniqueId(),0L);
@@ -2137,8 +2150,101 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             openKitRanks(player,0);
         });
     }
+    private void clearWipedInventory(Player player){
+        // Close open vaults before wiping, so closing them cannot restore items.
+        // Wipe covers main inventory, hotbar, armor, off-hand and Ender Chest.
+        player.closeInventory();
+        player.getInventory().clear();
+        player.getEnderChest().clear();
+        player.setItemOnCursor(null);
+        player.updateInventory();
+        pendingInventoryWipes.remove(player.getUniqueId());
+    }
+    private void wipePlayerData(UUID playerId){
+        cash.remove(playerId);
+        shards.remove(playerId);
+        homes.remove(playerId);
+        shardSecondsRemaining.remove(playerId);
+        requests.remove(playerId);
+        requests.values().removeIf(playerId::equals);
+        pendingInventoryWipes.add(playerId);
+        Player online=Bukkit.getPlayer(playerId);
+        if(online!=null){
+            clearWipedInventory(online);
+            updateSidebar(online);
+            online.sendMessage("§cAn administrator has wiped your inventory, Ender Chest, homes, money and shards.");
+        }
+    }
+    private boolean wipeCommand(CommandSender sender,String[] args){
+        if(!sender.hasPermission("diddyblud.admin")){
+            sender.sendMessage("§cOnly OPs may use /wipe.");return true;
+        }
+        if(args.length==0||args.length>2){
+            sender.sendMessage("§eUsage: /wipe <player> or /wipe all");
+            sender.sendMessage("§eConfirm a full reset with /wipe all confirm.");return true;
+        }
+        if(args[0].equalsIgnoreCase("all")){
+            if(args.length==1){
+                if(!(sender instanceof Player player)){
+                    sender.sendMessage("§cRun /wipe all confirm from the console.");return true;
+                }
+                pendingWipeAllConfirmation.put(player.getUniqueId(),
+                    System.currentTimeMillis()+60000L);
+                sender.sendMessage("§4WARNING: This will wipe EVERY player, including offline players.");
+                sender.sendMessage("§cType /wipe all confirm within 60 seconds to proceed.");
+                return true;
+            }
+            if(!args[1].equalsIgnoreCase("confirm")){
+                sender.sendMessage("§cUse /wipe all confirm.");return true;
+            }
+            if(sender instanceof Player player){
+                Long expiry=pendingWipeAllConfirmation.remove(player.getUniqueId());
+                if(expiry==null||System.currentTimeMillis()>expiry){
+                    sender.sendMessage("§cConfirmation expired. Run /wipe all first.");return true;
+                }
+            }
+            Set<UUID> targets=new HashSet<>();
+            for(OfflinePlayer offline:Bukkit.getOfflinePlayers())targets.add(offline.getUniqueId());
+            for(Player online:Bukkit.getOnlinePlayers())targets.add(online.getUniqueId());
+            targets.addAll(cash.keySet());
+            targets.addAll(shards.keySet());
+            targets.addAll(homes.keySet());
+            targets.addAll(pendingInventoryWipes);
+            for(UUID uuid:targets)wipePlayerData(uuid);
+            save();
+            sender.sendMessage("§aWiped "+targets.size()+
+                " player(s). Offline inventories and Ender Chests will clear on next login.");
+            getLogger().warning(sender.getName()+" executed /wipe all for "+targets.size()+" players.");
+            return true;
+        }
+        if(args.length!=1){
+            sender.sendMessage("§cUsage: /wipe <player>");return true;
+        }
+        OfflinePlayer target=null;
+        for(Player online:Bukkit.getOnlinePlayers()){
+            if(online.getName().equalsIgnoreCase(args[0])){target=online;break;}
+        }
+        if(target==null){
+            for(OfflinePlayer known:Bukkit.getOfflinePlayers()){
+                if(known.getName()!=null&&known.getName().equalsIgnoreCase(args[0])){
+                    target=known;break;
+                }
+            }
+        }
+        if(target==null){
+            sender.sendMessage("§cUnknown player. They must have joined the server before.");return true;
+        }
+        wipePlayerData(target.getUniqueId());
+        save();
+        sender.sendMessage("§aWiped "+target.getName()+
+            " (inventory, Ender Chest, homes, money, shards).");
+        getLogger().warning(sender.getName()+" wiped "+target.getName()+
+            " ("+target.getUniqueId()+")");
+        return true;
+    }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("wipe"))return wipeCommand(sender,args);
         if(cmd.equals("rank"))return rankCommand(sender,args);
         if(cmd.equals("kits")||cmd.equals("kit")){
             if(!(sender instanceof Player player)){
