@@ -2424,7 +2424,27 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         UUID uid=p.getUniqueId();
         try{
             switch(cmd){
-                case "bal","balance" ->{p.sendMessage("§aBalance: $"+funds(uid));return true;}
+                case "bal","balance" ->{
+                    if(args.length==0){
+                        p.sendMessage("§aYour balance: $"+funds(uid));return true;
+                    }
+                    if(args.length!=1){
+                        p.sendMessage("§eUsage: /bal [player]");return true;
+                    }
+                    OfflinePlayer target=null;
+                    Player online=Bukkit.getPlayerExact(args[0]);
+                    if(online!=null)target=online;
+                    if(target==null)for(OfflinePlayer known:Bukkit.getOfflinePlayers()){
+                        if(known.getName()!=null&&known.getName().equalsIgnoreCase(args[0])){
+                            target=known;break;
+                        }
+                    }
+                    if(target==null){
+                        p.sendMessage("§cPlayer not found. They must have joined before.");return true;
+                    }
+                    p.sendMessage("§a"+target.getName()+"'s balance: $"+funds(target.getUniqueId()));
+                    return true;
+                }
                 case "shards" ->{
                     if(args.length==0){
                         p.sendMessage("§bShards: "+shards.getOrDefault(uid,0L));return true;
