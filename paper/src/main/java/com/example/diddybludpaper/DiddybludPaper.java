@@ -1065,7 +1065,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(s==null)continue;
             ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)&&!isOrdinaryShopItem(id)?"§cDISABLED ":"")+shopNames.getOrDefault("item:"+id,id)+
                " §aBuy $"+buy.get(id)+" §eSell $"+sell.getOrDefault(id,0L));
-            if(admin)meta.setLore(List.of("§eLeft: +$100 buy price","§eRight: +$10 sell price","§eShift-left: select / swap order","§eShift-right: rename via chat","§7Delete: /shopedit deleteitem <id>"));
+            if(admin)meta.setLore(List.of("§eLeft: +$100 buy price","§eRight: +$10 sell price","§eShift-left: select / swap order","§eShift-right: rename via chat","§cHover + F: delete listing"));
             s.setItemMeta(meta);inv.setItem(i,s);
         }
         inv.setItem(18,icon(Material.ARROW,"Back"));
@@ -1603,6 +1603,22 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             int at=h.page*18+slot;if(at>=ids.size())return;
             String id=ids.get(at);
             if(admin){
+                // Paper receives the inventory offhand-swap key (F), but not
+                // F4 or Shift+F4. Delete only within the OP shop editor.
+                if(e.getClick()==ClickType.SWAP_OFFHAND){
+                    deletedShopListings.add(id);
+                    assignments.remove(id);
+                    buy.remove(id);
+                    sell.remove(id);
+                    offItems.remove(id);
+                    itemOrder.remove(id);
+                    shopNames.remove("item:"+id);
+                    pendingShopSwap.remove(p.getUniqueId());
+                    save();
+                    p.sendMessage("§aDeleted shop listing "+id+".");
+                    openCategory(p,category,h.page,true);
+                    return;
+                }
                 if(e.isShiftClick()){
                     if(e.isRightClick()){
                         pendingShopRename.put(p.getUniqueId(),"item:"+id);
