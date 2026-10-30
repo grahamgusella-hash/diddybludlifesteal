@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.22-paper
+version: 0.8.23-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
