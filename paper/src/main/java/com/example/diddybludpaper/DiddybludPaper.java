@@ -87,6 +87,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> shardSecondsRemaining=new HashMap<>();
     // Offline inventories and Ender Chests are cleared on their next login.
     private final Set<UUID> pendingInventoryWipes=new HashSet<>();
+    private record WipeBackup(long money,long points,long playtime,long hearts,long timer,
+        Map<String,Location> homes,ItemStack[] inventory,ItemStack[] ender){}
+    private final Map<UUID,WipeBackup> wipeBackups=new HashMap<>();
+    private final Set<UUID> pendingRestores=new HashSet<>();
     private final Map<UUID,Long> pendingWipeAllConfirmation=new HashMap<>();
     private final Map<UUID,Scoreboard> sidebars=new HashMap<>();
     private int nextAuction=1,nextOrder=1,heartCap=100;
@@ -229,6 +233,24 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        for(String id:y.getStringList("pending-unwipe-restores"))
+            try{pendingRestores.add(UUID.fromString(id));}catch(IllegalArgumentException ignored){}
+        ConfigurationSection backups=y.getConfigurationSection("wipe-backups");
+        if(backups!=null)for(String raw:backups.getKeys(false))try{
+            UUID id=UUID.fromString(raw);
+            String base="wipe-backups."+raw+".";
+            Map<String,Location> storedHomes=new LinkedHashMap<>();
+            ConfigurationSection hs=y.getConfigurationSection(base+"homes");
+            if(hs!=null)for(String h:hs.getKeys(false)){
+                Location location=hs.getLocation(h);
+                if(location!=null)storedHomes.put(h,location);
+            }
+            wipeBackups.put(id,new WipeBackup(y.getLong(base+"money"),
+                y.getLong(base+"points"),y.getLong(base+"playtime"),
+                y.getLong(base+"hearts",10),y.getLong(base+"timer",SHARD_INTERVAL_SECONDS),
+                storedHomes,readWipeItems(y.getList(base+"inventory")),
+                readWipeItems(y.getList(base+"ender"))));
+        }catch(IllegalArgumentException ignored){}
         for(String id:y.getStringList("pending-inventory-wipes")){
             try{pendingInventoryWipes.add(UUID.fromString(id));}
             catch(IllegalArgumentException ignored){}
@@ -367,6 +389,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        y.set("pending-unwipe-restores",pendingRestores.stream().map(UUID::toString).toList());
+        wipeBackups.forEach((id,b)->{
+            String base="wipe-backups."+id+".";
+            y.set(base+"money",b.money());y.set(base+"points",b.points());
+            y.set(base+"playtime",b.playtime());y.set(base+"hearts",b.hearts());
+            y.set(base+"timer",b.timer());
+            b.homes().forEach((name,loc)->y.set(base+"homes."+name,loc));
+            if(b.inventory()!=null)y.set(base+"inventory",Arrays.asList(cloneItems(b.inventory())));
+            if(b.ender()!=null)y.set(base+"ender",Arrays.asList(cloneItems(b.ender())));
+        });
         y.set("pending-inventory-wipes",
             pendingInventoryWipes.stream().map(UUID::toString).toList());
         kits.forEach((name,kit)->{
@@ -2153,9 +2185,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onJoin(PlayerJoinEvent event){
         Player player=event.getPlayer();
         if(pendingInventoryWipes.contains(player.getUniqueId())){
+            backupWipe(player.getUniqueId(),player);
             clearWipedInventory(player);
             save();
         }
+        if(pendingRestores.contains(player.getUniqueId()))finishUnwipe(player);
         int savedHearts=maxHearts(player);
         setHearts(player,savedHearts);
         leaderboardPlaytime.putIfAbsent(player.getUniqueId(),0L);
@@ -2238,6 +2272,80 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             openKitRanks(player,0);
         });
     }
+    private static ItemStack[] readWipeItems(List<?> items){
+        if(items==null)return null;
+        ItemStack[] result=new ItemStack[items.size()];
+        for(int i=0;i<items.size();i++)if(items.get(i) instanceof ItemStack item)
+            result[i]=item.clone();
+        return result;
+    }
+    private OfflinePlayer knownPlayer(String name){
+        Player online=Bukkit.getPlayerExact(name);
+        if(online!=null)return online;
+        for(OfflinePlayer old:Bukkit.getOfflinePlayers())
+            if(old.getName()!=null&&old.getName().equalsIgnoreCase(name))return old;
+        return null;
+    }
+    private void backupWipe(UUID uuid,Player player){
+        WipeBackup old=wipeBackups.get(uuid);
+        if(old!=null){
+            if(old.inventory()==null&&player!=null)
+                wipeBackups.put(uuid,new WipeBackup(old.money(),old.points(),
+                    old.playtime(),old.hearts(),old.timer(),old.homes(),
+                    cloneItems(player.getInventory().getContents()),
+                    cloneItems(player.getEnderChest().getContents())));
+            return;
+        }
+        Map<String,Location> locations=new LinkedHashMap<>();
+        homes.getOrDefault(uuid,Map.of()).forEach((name,loc)->locations.put(name,loc.clone()));
+        wipeBackups.put(uuid,new WipeBackup(funds(uuid),shards.getOrDefault(uuid,0L),
+            leaderboardPlaytime.getOrDefault(uuid,0L),leaderboardHearts.getOrDefault(uuid,10L),
+            shardSecondsRemaining.getOrDefault(uuid,SHARD_INTERVAL_SECONDS),locations,
+            player==null?null:cloneItems(player.getInventory().getContents()),
+            player==null?null:cloneItems(player.getEnderChest().getContents())));
+    }
+    private void finishUnwipe(Player player){
+        UUID id=player.getUniqueId();
+        WipeBackup old=wipeBackups.get(id);
+        if(old!=null&&old.inventory()!=null&&old.ender()!=null){
+            player.closeInventory();
+            player.getInventory().setContents(cloneItems(old.inventory()));
+            player.getEnderChest().setContents(cloneItems(old.ender()));
+            player.updateInventory();
+        }
+        pendingRestores.remove(id);
+        wipeBackups.remove(id);
+    }
+    private boolean unwipeCommand(CommandSender sender,String[] args){
+        if(!sender.hasPermission("diddyblud.admin")){
+            sender.sendMessage("§cOP only.");return true;
+        }
+        if(args.length!=1){sender.sendMessage("§eUsage: /unwipe <player>");return true;}
+        OfflinePlayer target=knownPlayer(args[0]);
+        if(target==null){sender.sendMessage("§cUnknown player.");return true;}
+        UUID id=target.getUniqueId();
+        WipeBackup old=wipeBackups.get(id);
+        if(old==null){sender.sendMessage("§cNo backup exists from a wipe made with this version.");return true;}
+        cash.put(id,old.money());shards.put(id,old.points());
+        leaderboardPlaytime.put(id,old.playtime());leaderboardHearts.put(id,old.hearts());
+        shardSecondsRemaining.put(id,old.timer());
+        if(old.homes().isEmpty())homes.remove(id);
+        else homes.put(id,new LinkedHashMap<>(old.homes()));
+        pendingInventoryWipes.remove(id);
+        Player player=Bukkit.getPlayer(id);
+        if(old.inventory()!=null&&old.ender()!=null){
+            if(player!=null)finishUnwipe(player);
+            else pendingRestores.add(id);
+        }else wipeBackups.remove(id); // Offline wipe not executed on inventory yet.
+        if(player!=null){
+            setHearts(player,(int)Math.max(1,Math.min(heartCap,old.hearts())));
+            updateSidebar(player);
+        }
+        save();
+        if(leaderboards!=null)leaderboards.refresh();
+        sender.sendMessage("§aRestored pre-wipe data for "+target.getName()+".");
+        return true;
+    }
     private void clearWipedInventory(Player player){
         // Close open vaults before wiping, so closing them cannot restore items.
         // Wipe covers main inventory, hotbar, armor, off-hand and Ender Chest.
@@ -2249,6 +2357,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         pendingInventoryWipes.remove(player.getUniqueId());
     }
     private void wipePlayerData(UUID playerId){
+        Player online=Bukkit.getPlayer(playerId);
+        backupWipe(playerId,online);
+        pendingRestores.remove(playerId);
         cash.remove(playerId);
         shards.remove(playerId);
         homes.remove(playerId);
@@ -2258,7 +2369,6 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         requests.remove(playerId);
         requests.values().removeIf(playerId::equals);
         pendingInventoryWipes.add(playerId);
-        Player online=Bukkit.getPlayer(playerId);
         if(online!=null){
             clearWipedInventory(online);
             setHearts(online,10);
@@ -2365,6 +2475,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             openInventorySee(player,target);return true;
         }
+        if(cmd.equals("unwipe"))return unwipeCommand(sender,args);
         if(cmd.equals("wipe"))return wipeCommand(sender,args);
         if(cmd.equals("rank"))return rankCommand(sender,args);
         if(cmd.equals("kits")||cmd.equals("kit")){
