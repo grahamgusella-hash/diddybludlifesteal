@@ -2542,14 +2542,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     if(args.length!=1){
                         p.sendMessage("§eUsage: /bal [player]");return true;
                     }
-                    OfflinePlayer target=null;
-                    Player online=Bukkit.getPlayerExact(args[0]);
-                    if(online!=null)target=online;
-                    if(target==null)for(OfflinePlayer known:Bukkit.getOfflinePlayers()){
-                        if(known.getName()!=null&&known.getName().equalsIgnoreCase(args[0])){
-                            target=known;break;
-                        }
-                    }
+                    OfflinePlayer target=knownPlayer(args[0]);
                     if(target==null){
                         p.sendMessage("§cPlayer not found. They must have joined before.");return true;
                     }
@@ -2579,31 +2572,53 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     target.sendMessage("§bYour shard balance is now "+updated+".");
                     return true;
                 }
-                case "money" ->{
+                case "money","setmoney","givemoney" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
-                    if(args.length!=3||(!args[0].equalsIgnoreCase("give")&&!args[0].equalsIgnoreCase("set"))){
-                        p.sendMessage("Usage: /money give <player> <amount> or /money set <player> <amount>");
+                    boolean directSet=cmd.equals("setmoney");
+                    boolean directGive=cmd.equals("givemoney");
+                    if((directSet||directGive)?args.length!=2:args.length!=3){
+                        p.sendMessage("§e/money <give|set> <player> <amount>");
+                        p.sendMessage("§e/setmoney <player> <amount> | /givemoney <player> <amount>");
                         return true;
                     }
-                    Player target=Bukkit.getPlayerExact(args[1]);
-                    if(target==null){p.sendMessage("§cPlayer must be online.");return true;}
-                    boolean setting=args[0].equalsIgnoreCase("set");
-                    long amount=setting?parseSetAmount(args[2]):parseAmount(args[2]);
-                    long current=funds(target.getUniqueId());
-                    long updated=setting?amount:Math.addExact(current,amount);
+                    String operation=directSet?"set":directGive?"give":args[0].toLowerCase(Locale.ROOT);
+                    if(!operation.equals("give")&&!operation.equals("set")){
+                        p.sendMessage("§cUse give or set.");return true;
+                    }
+                    String playerName=args[directSet||directGive?0:1];
+                    OfflinePlayer target=knownPlayer(playerName);
+                    if(target==null){p.sendMessage("§cUnknown player. They must have joined before.");return true;}
+                    long amount=operation.equals("set")
+                        ?parseSetAmount(args[directSet||directGive?1:2])
+                        :parseAmount(args[directSet||directGive?1:2]);
+                    long updated=operation.equals("set")?amount:Math.addExact(funds(target.getUniqueId()),amount);
                     cash.put(target.getUniqueId(),updated);
                     save();
                     p.sendMessage("§a"+target.getName()+" now has $"+updated+".");
-                    target.sendMessage("§aYour money balance is now $"+updated+".");
+                    if(target.isOnline()&&target.getPlayer()!=null)
+                        target.getPlayer().sendMessage("§aYour balance is now $"+updated+".");
                     return true;
                 }
                 case "pay" ->{
-                    if(args.length!=2){p.sendMessage("/pay <player> <amount>");return true;}
-                    Player target=Bukkit.getPlayerExact(args[0]);if(target==null||target.equals(p))return true;
-                    long v=parseAmount(args[1]);
-                    if(!charge(uid,v)){p.sendMessage("Not enough money.");return true;}
-                    if(!credit(target.getUniqueId(),v)){credit(uid,v);p.sendMessage("Balance overflow.");return true;}
-                    p.sendMessage("Paid $"+v+" to "+target.getName());return true;
+                    if(args.length!=2){p.sendMessage("§e/pay <player> <amount>");return true;}
+                    OfflinePlayer target=knownPlayer(args[0]);
+                    if(target==null){p.sendMessage("§cUnknown player. They must have joined before.");return true;}
+                    if(target.getUniqueId().equals(uid)){
+                        p.sendMessage("§cYou cannot pay yourself.");return true;
+                    }
+                    long amount=parseAmount(args[1]);
+                    if(amount<=0){p.sendMessage("§cPayment must be positive.");return true;}
+                    if(funds(uid)<amount){p.sendMessage("§cNot enough money.");return true;}
+                    if(funds(target.getUniqueId())>Long.MAX_VALUE-amount){
+                        p.sendMessage("§cRecipient balance would overflow.");return true;
+                    }
+                    cash.put(uid,funds(uid)-amount);
+                    cash.put(target.getUniqueId(),funds(target.getUniqueId())+amount);
+                    save();
+                    p.sendMessage("§aPaid $"+amount+" to "+target.getName()+".");
+                    if(target.isOnline()&&target.getPlayer()!=null)
+                        target.getPlayer().sendMessage("§aReceived $"+amount+" from "+p.getName()+".");
+                    return true;
                 }
                 case "hearts" ->{
                     if(args.length==0){p.sendMessage("§cHearts: "+maxHearts(p)+" / "+heartCap);return true;}
