@@ -130,6 +130,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getScheduler().runTaskTimer(this,this::tickShardRewards,20L,20L);
         getServer().getScheduler().runTaskTimer(this,()->leaderboards.refresh(),40L,400L);
         getServer().getScheduler().runTaskTimer(this,this::refreshRankEffects,20L,80L);
+        // Render cosmetic rank particles 16x more often than before.
+        getServer().getScheduler().runTaskTimer(this,this::renderRankParticles,5L,5L);
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         refreshAllRanks();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
@@ -1977,11 +1979,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             if(applied.isEmpty())previouslyAppliedRankPotions.remove(player.getUniqueId());
             else previouslyAppliedRankPotions.put(player.getUniqueId(),applied);
-            Particle particle=rank==null?null:resolveRankParticle(rankParticleEffects.get(rank));
-            if(particle!=null){
-                player.getWorld().spawnParticle(particle,
-                    player.getLocation().add(0,1,0),8,0.35,0.65,0.35,0.01);
-            }
+        }
+    }
+    private void renderRankParticles(){
+        for(Player player:Bukkit.getOnlinePlayers()){
+            if(player.isDead())continue;
+            String rank=assignedRanks.get(player.getUniqueId());
+            if(rank==null)continue;
+            Particle particle=resolveRankParticle(rankParticleEffects.get(rank));
+            if(particle==null)continue;
+            player.getWorld().spawnParticle(particle,
+                player.getLocation().add(0,1,0),5,0.35,0.65,0.35,0.01);
         }
     }
     private boolean rankCommand(CommandSender sender,String[] args){
