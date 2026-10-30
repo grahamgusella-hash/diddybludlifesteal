@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.20-paper
+version: 0.8.21-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -17,6 +17,15 @@ commands:
     description: Open your Ender Chest, or another online player's as an admin
   invsee:
     description: View and edit an online player's inventory
+    permission: diddyblud.admin
+  unwipe:
+    description: Restore the last recoverable wipe backup for a player
+    permission: diddyblud.admin
+  setmoney:
+    description: Set an online or offline player's money (OP)
+    permission: diddyblud.admin
+  givemoney:
+    description: Give an online or offline player money (OP)
     permission: diddyblud.admin
   wipe:
     description: Reset a player or all players (inventory, Ender Chest, homes, money and shards)
