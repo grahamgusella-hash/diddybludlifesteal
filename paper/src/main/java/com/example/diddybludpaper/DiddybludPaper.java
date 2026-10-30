@@ -8,6 +8,10 @@ import org.bukkit.command.*;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.*;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -117,6 +121,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         leaderboards=new LeaderboardHolograms(this,this::leaderboardScores);
         spawners=new PaperSpawners(this,spawnerKey);
         getServer().getPluginManager().registerEvents(this,this);
+        for(World world:getServer().getWorlds())
+            for(Chunk chunk:world.getLoadedChunks())removePhantoms(chunk);
         getServer().getPluginManager().registerEvents(spawners,this);
         getServer().getScheduler().runTaskTimer(this,()->spawners.produce(),100L,100L);
         getServer().getScheduler().runTaskTimer(this,this::save,6000L,6000L);
@@ -127,6 +133,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         refreshAllRanks();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
+    }
+    // Phantoms are disabled in every world, including custom dimensions.
+    @EventHandler(ignoreCancelled=true)
+    public void preventPhantoms(CreatureSpawnEvent event){
+        if(event.getEntityType()==EntityType.PHANTOM)event.setCancelled(true);
+    }
+    private void removePhantoms(Chunk chunk){
+        for(Entity entity:chunk.getEntities())
+            if(entity.getType()==EntityType.PHANTOM)entity.remove();
+    }
+    @EventHandler
+    public void removeExistingPhantoms(ChunkLoadEvent event){
+        removePhantoms(event.getChunk());
     }
     @Override public void onDisable(){
         // Snapshot vaults that are still open when the server stops. Bukkit may
