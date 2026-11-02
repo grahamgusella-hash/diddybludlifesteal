@@ -77,6 +77,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,UUID> requests=new HashMap<>();
     private final Map<String,ItemStack[]> vaults=new HashMap<>();
     private final Map<UUID,UUID> viewedInventories=new HashMap<>();
+    // Command-specific player restrictions, including commands owned by other plugins.
+    private final Map<UUID,Set<String>> blockedPlayerCommands=new HashMap<>();
     // Captured ClickVillagers head retains the entire original ItemStack metadata.
     private ItemStack clickVillagerShopTemplate;
     private static final String CLICK_VILLAGER_SHOP_ID="CLICKVILLAGER_CAPTURED";
@@ -258,6 +260,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        ConfigurationSection blocked=y.getConfigurationSection("blocked-player-commands");
+        if(blocked!=null)for(String id:blocked.getKeys(false))try{
+            blockedPlayerCommands.put(UUID.fromString(id),
+                new HashSet<>(blocked.getStringList(id)));
+        }catch(IllegalArgumentException ignored){}
+
         for(String category:new String[]{"money","playtime","hearts"}){
             ConfigurationSection previous=y.getConfigurationSection("leaderboard-baselines."+category);
             if(previous==null)continue;
@@ -426,6 +434,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        blockedPlayerCommands.forEach((id,commands)->
+            y.set("blocked-player-commands."+id,new ArrayList<>(commands)));
         leaderboardMoneyBaseline.forEach((id,v)->y.set("leaderboard-baselines.money."+id,v));
         leaderboardPlaytimeBaseline.forEach((id,v)->y.set("leaderboard-baselines.playtime."+id,v));
         leaderboardHeartsBaseline.forEach((id,v)->y.set("leaderboard-baselines.hearts."+id,v));
@@ -1287,6 +1297,106 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
         p.openInventory(inv);
     }
+    // Canonical identities include the plugin owner, avoiding collisions when
+    // two plugins register the same visible command or an alias.
+    private String permissionCommandId(Command command){
+        if(command instanceof PluginCommand pluginCommand)
+            return pluginCommand.getPlugin().getName().toLowerCase(Locale.ROOT)+":"+
+                command.getName().toLowerCase(Locale.ROOT);
+        return "server:"+command.getName().toLowerCase(Locale.ROOT);
+    }
+    private List<Command> permissionCommands(){
+        Map<String,Command> registered=Bukkit.getCommandMap().getKnownCommands();
+        Map<String,Command> unique=new TreeMap<>();
+        for(Command command:registered.values())
+            unique.putIfAbsent(permissionCommandId(command),command);
+        return new ArrayList<>(unique.values());
+    }
+    private List<OfflinePlayer> permissionPlayers(){
+        Map<UUID,OfflinePlayer> all=new LinkedHashMap<>();
+        for(OfflinePlayer offline:Bukkit.getOfflinePlayers())
+            all.put(offline.getUniqueId(),offline);
+        for(Player online:Bukkit.getOnlinePlayers())
+            all.put(online.getUniqueId(),online);
+        List<OfflinePlayer> players=new ArrayList<>(all.values());
+        players.sort(Comparator.comparing((OfflinePlayer p)->
+            p.getName()==null?"~"+p.getUniqueId():
+                p.getName().toLowerCase(Locale.ROOT)));
+        return players;
+    }
+    private void openPermissionPlayers(Player admin,int page){
+        List<OfflinePlayer> players=permissionPlayers();
+        int last=Math.max(0,(players.size()-1)/45);
+        page=Math.max(0,Math.min(page,last));
+        Inventory inv=Bukkit.createInventory(
+            new MenuHolder("permsplayers",page,admin.getUniqueId()),54,
+            "§6§lPlayer Permissions");
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<45&&page*45+i<players.size();i++){
+            OfflinePlayer target=players.get(page*45+i);
+            String name=target.getName()==null?target.getUniqueId().toString().substring(0,8)
+                :target.getName();
+            ItemStack icon=icon(Material.PLAYER_HEAD,"§e"+name);
+            ItemMeta meta=icon.getItemMeta();
+            meta.setLore(List.of(target.isOnline()?"§aOnline":"§7Offline",
+                "§7Blocked commands: §c"+
+                    blockedPlayerCommands.getOrDefault(target.getUniqueId(),Set.of()).size(),
+                "§eClick to edit command access"));
+            icon.setItemMeta(meta);
+            inv.setItem(i,icon);
+        }
+        inv.setItem(45,icon(Material.ARROW,"§ePrevious page"));
+        inv.setItem(49,icon(Material.BARRIER,"§cClose"));
+        inv.setItem(53,icon(Material.ARROW,"§eNext page"));
+        admin.openInventory(inv);
+    }
+    private void openPermissionCommands(Player admin,UUID targetId,int page){
+        List<Command> commands=permissionCommands();
+        int last=Math.max(0,(commands.size()-1)/45);
+        page=Math.max(0,Math.min(page,last));
+        OfflinePlayer target=Bukkit.getOfflinePlayer(targetId);
+        String name=target.getName()==null?targetId.toString().substring(0,8):target.getName();
+        Inventory inv=Bukkit.createInventory(
+            new MenuHolder("permscommands:"+targetId,page,admin.getUniqueId()),54,
+            "§6§lCommands: "+name.substring(0,Math.min(16,name.length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        Set<String> blocked=blockedPlayerCommands.getOrDefault(targetId,Set.of());
+        for(int i=0;i<45&&page*45+i<commands.size();i++){
+            Command command=commands.get(page*45+i);
+            String id=permissionCommandId(command);
+            boolean allowed=!blocked.contains(id);
+            ItemStack icon=icon(allowed?Material.LIME_DYE:Material.RED_DYE,
+                (allowed?"§aTRUE §7":"§cFALSE §7")+"/"+command.getName());
+            ItemMeta meta=icon.getItemMeta();
+            meta.setLore(List.of("§7Registered by: §f"+
+                    (command instanceof PluginCommand pc?pc.getPlugin().getName():"Server"),
+                "§7Command: §f/"+command.getName(),
+                "§7Current access: "+(allowed?"§aTRUE":"§cFALSE"),
+                "§eClick to change to "+(allowed?"FALSE":"TRUE"),
+                "§8This controls command execution, not permission nodes"));
+            icon.setItemMeta(meta);
+            inv.setItem(i,icon);
+        }
+        inv.setItem(45,icon(Material.ARROW,"§ePrevious page"));
+        inv.setItem(49,icon(Material.BARRIER,"§eBack to players"));
+        inv.setItem(53,icon(Material.ARROW,"§eNext page"));
+        admin.openInventory(inv);
+    }
+    @EventHandler(priority=EventPriority.LOWEST,ignoreCancelled=true)
+    public void preventBlockedPlayerCommand(PlayerCommandPreprocessEvent event){
+        String input=event.getMessage();
+        if(input.length()<2||input.charAt(0)!='/')return;
+        String entered=input.substring(1).split("\\s+",2)[0].toLowerCase(Locale.ROOT);
+        Command command=Bukkit.getCommandMap().getCommand(entered);
+        if(command==null)return;
+        String id=permissionCommandId(command);
+        if(id.equalsIgnoreCase(getName()+":perms"))return;
+        if(blockedPlayerCommands.getOrDefault(event.getPlayer().getUniqueId(),Set.of())
+                .contains(id)){
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cYou are not allowed to use /"+command.getName()+".");
+        }
+    }
     private void openInventorySee(Player viewer,Player target){
         for(var entry:viewedInventories.entrySet()){
             if(entry.getValue().equals(target.getUniqueId())&&!entry.getKey().equals(viewer.getUniqueId())){
@@ -1381,6 +1491,43 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
+        if(type.equals("permsplayers")||type.startsWith("permscommands:")){
+            e.setCancelled(true);
+            if(!p.hasPermission("diddyblud.admin")){p.closeInventory();return;}
+            if(type.equals("permsplayers")){
+                if(slot==45){openPermissionPlayers(p,h.page-1);return;}
+                if(slot==49){p.closeInventory();return;}
+                if(slot==53){openPermissionPlayers(p,h.page+1);return;}
+                if(slot<0||slot>=45)return;
+                List<OfflinePlayer> all=permissionPlayers();
+                int index=h.page*45+slot;
+                if(index<all.size())
+                    openPermissionCommands(p,all.get(index).getUniqueId(),0);
+                return;
+            }
+            UUID targetId;
+            try{targetId=UUID.fromString(type.substring("permscommands:".length()));}
+            catch(IllegalArgumentException ex){p.closeInventory();return;}
+            if(slot==45){openPermissionCommands(p,targetId,h.page-1);return;}
+            if(slot==49){openPermissionPlayers(p,0);return;}
+            if(slot==53){openPermissionCommands(p,targetId,h.page+1);return;}
+            if(slot<0||slot>=45)return;
+            List<Command> all=permissionCommands();
+            int index=h.page*45+slot;
+            if(index>=all.size())return;
+            String commandId=permissionCommandId(all.get(index));
+            if(commandId.equalsIgnoreCase(getName()+":perms")){
+                p.sendMessage("§cCannot disable the permissions editor itself.");
+                return;
+            }
+            Set<String> blocked=blockedPlayerCommands.computeIfAbsent(
+                targetId,k->new HashSet<>());
+            if(!blocked.add(commandId))blocked.remove(commandId);
+            if(blocked.isEmpty())blockedPlayerCommands.remove(targetId);
+            save();
+            openPermissionCommands(p,targetId,h.page);
+            return;
+        }
         if(type.equals("invsee")){
             if(!p.hasPermission("diddyblud.admin")){e.setCancelled(true);return;}
             if(slot>=41&&slot<54){
@@ -2330,6 +2477,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onDrag(InventoryDragEvent e){
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.startsWith("vault:"))return;
+        if(h.kind.equals("permsplayers")||h.kind.startsWith("permscommands:")){
+            e.setCancelled(true);return;
+        }
         if(h.kind.equals("invsee")){
             for(int slot:e.getRawSlots())if(slot>=41&&slot<54){
                 e.setCancelled(true);return;
@@ -2583,6 +2733,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 player.sendMessage("§cChoose another online player.");return true;
             }
             openInventorySee(player,target);return true;
+        }
+        if(cmd.equals("perms")){
+            if(!(sender instanceof Player player)){
+                sender.sendMessage("§cUse /perms in-game.");return true;
+            }
+            if(!player.hasPermission("diddyblud.admin")){
+                player.sendMessage("§cOnly OPs can edit player command access.");return true;
+            }
+            openPermissionPlayers(player,0);return true;
         }
         if(cmd.equals("unwipe"))return unwipeCommand(sender,args);
         if(cmd.equals("wipe"))return wipeCommand(sender,args);
