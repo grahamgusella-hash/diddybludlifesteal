@@ -134,6 +134,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         leaderboards=new LeaderboardHolograms(this,this::leaderboardScores);
         spawners=new PaperSpawners(this,spawnerKey);
         getServer().getPluginManager().registerEvents(this,this);
+        getServer().getPluginManager().registerEvents(new MiningAbilities(this),this);
         for(World world:getServer().getWorlds())
             for(Chunk chunk:world.getLoadedChunks())removePhantoms(chunk);
         getServer().getPluginManager().registerEvents(spawners,this);
@@ -1549,6 +1550,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             event.setCancelled(true);
             event.getPlayer().sendMessage("§cYou are not allowed to use /"+command.getName()+".");
         }
+    }
+    // Used by mining abilities: /perms disables the actual ability, not just its command.
+    boolean abilityAllowed(Player player,String name){
+        String commandId=getName().toLowerCase(Locale.ROOT)+":"+name;
+        UUID id=player.getUniqueId();
+        String group=playerPermissionGroups.get(id);
+        return !blockedPlayerCommands.getOrDefault(id,Set.of()).contains(commandId)
+            && (group==null||!blockedGroupCommands.getOrDefault(group,Set.of()).contains(commandId));
     }
     private void openInventorySee(Player viewer,Player target){
         for(var entry:viewedInventories.entrySet()){
@@ -2970,6 +2979,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("veinminer")||cmd.equals("treefeller")){
+            sender.sendMessage("§a"+(cmd.equals("veinminer")?"VeinMiner":"Tree Feller")+
+                " is active by default. §eHold Shift while breaking "+
+                (cmd.equals("veinminer")?"ore with a pickaxe.":"a log with an axe or empty hand.")+
+                " §7Admins can restrict this ability via /perms.");
+            return true;
+        }
         if(cmd.equals("echest")){
             if(!(sender instanceof Player player)){
                 sender.sendMessage("§cUse this command in-game.");return true;
