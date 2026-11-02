@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.26-paper
+version: 0.8.27-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -26,6 +26,9 @@ commands:
     permission: diddyblud.admin
   givemoney:
     description: Give an online or offline player money (OP)
+    permission: diddyblud.admin
+  perms:
+    description: Open the OP-only per-player command access GUI
     permission: diddyblud.admin
   wipe:
     description: Reset a player or all players (inventory, Ender Chest, homes, money and shards)
