@@ -1040,10 +1040,20 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(material==null)continue;
             int slot=page==0?FIXED_SLOTS[i]:i;
             inv.setItem(slot,icon(material,(offCategories.contains(category)?"§cOFF §r":"")+shopNames.getOrDefault("cat:"+category,category)));
-            if(admin){
+            {
                 ItemStack display=inv.getItem(slot);
                 ItemMeta m=display.getItemMeta();
-                m.setLore(List.of("§eShift-left: select / swap category","§eShift-right: rename via chat"));
+                m.setLore(admin
+                    ?List.of("§6§lSHOP ADMIN CONTROLS",
+                        "§aLeft-click §7- Open category",
+                        "§eShift + Left-click §7- Select / swap category",
+                        "§eShift + Right-click §7- Rename category in chat",
+                        "§8Click Admin settings again to exit")
+                    :List.of("§6§lSHOP CONTROLS",
+                        "§aLeft-click §7- Open category",
+                        "§7Select an item to buy or sell",
+                        p.hasPermission("diddyblud.admin")
+                            ?"§eClick Admin settings for editing tools":"§8Browse and select items"));
                 display.setItemMeta(m);
             }
         }
@@ -1067,7 +1077,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             if(s==null)continue;
             ItemMeta meta=s.getItemMeta();meta.setDisplayName((offItems.contains(id)&&!isOrdinaryShopItem(id)?"§cDISABLED ":"")+shopNames.getOrDefault("item:"+id,id)+
                " §aBuy $"+buy.get(id)+" §eSell $"+sell.getOrDefault(id,0L));
-            if(admin)meta.setLore(List.of("§eLeft: +$100 buy price","§eRight: +$10 sell price","§eShift-left: select / swap order","§eShift-right: rename via chat","§cHover + F: delete listing"));
+            meta.setLore(admin
+                ?List.of("§6§lSHOP ADMIN CONTROLS",
+                    "§aLeft-click §7- Increase buy price by $100",
+                    "§aRight-click §7- Increase sell price by $10",
+                    "§eShift + Left-click §7- Select / swap order",
+                    "§eShift + Right-click §7- Rename item in chat",
+                    "§cF (swap off-hand) §7- Delete listing",
+                    "§8Only available in Admin Mode")
+                :List.of("§6§lSHOP CONTROLS",
+                    "§aLeft-click §7- Buy this item",
+                    "§eRight-click §7- Sell this item",
+                    "§7Choose quantity in the next menu",
+                    "§8Buy: $"+buy.get(id)+"  Sell: $"+sell.getOrDefault(id,0L)));
             s.setItemMeta(meta);inv.setItem(i,s);
         }
         inv.setItem(18,icon(Material.ARROW,"Back"));
