@@ -38,6 +38,10 @@ import java.util.*;
 public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,Long> cash=new HashMap<>(),shards=new HashMap<>();
     private final Map<UUID,Long> leaderboardPlaytime=new HashMap<>(),leaderboardHearts=new HashMap<>();
+    // Snapshot score baselines when the leaderboards are wiped, preserving
+    // real balances, heart counts and playtime.
+    private final Map<UUID,Long> leaderboardMoneyBaseline=new HashMap<>(),
+        leaderboardPlaytimeBaseline=new HashMap<>(),leaderboardHeartsBaseline=new HashMap<>();
     private final Map<String,String> rankLabels=new LinkedHashMap<>();
     private final Map<UUID,String> assignedRanks=new HashMap<>();
     // Potion buffs and particles are per-rank, and are not permission grants.
@@ -254,6 +258,18 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        for(String category:new String[]{"money","playtime","hearts"}){
+            ConfigurationSection previous=y.getConfigurationSection("leaderboard-baselines."+category);
+            if(previous==null)continue;
+            Map<UUID,Long> dest=switch(category){
+                case "money"->leaderboardMoneyBaseline;
+                case "playtime"->leaderboardPlaytimeBaseline;
+                default->leaderboardHeartsBaseline;
+            };
+            for(String key:previous.getKeys(false))try{
+                dest.put(UUID.fromString(key),previous.getLong(key));
+            }catch(IllegalArgumentException ignored){}
+        }
         for(String id:y.getStringList("pending-unwipe-restores"))
             try{pendingRestores.add(UUID.fromString(id));}catch(IllegalArgumentException ignored){}
         ConfigurationSection backups=y.getConfigurationSection("wipe-backups");
@@ -410,6 +426,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        leaderboardMoneyBaseline.forEach((id,v)->y.set("leaderboard-baselines.money."+id,v));
+        leaderboardPlaytimeBaseline.forEach((id,v)->y.set("leaderboard-baselines.playtime."+id,v));
+        leaderboardHeartsBaseline.forEach((id,v)->y.set("leaderboard-baselines.hearts."+id,v));
         y.set("pending-unwipe-restores",pendingRestores.stream().map(UUID::toString).toList());
         wipeBackups.forEach((id,b)->{
             String base="wipe-backups."+id+".";
@@ -1907,9 +1926,34 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     // Uses vanilla scoreboard packets: no client mod or texture pack needed.
     private Map<UUID,Long> leaderboardScores(String type){
-        if(type.equals("money"))return new HashMap<>(cash);
-        if(type.equals("playtime"))return new HashMap<>(leaderboardPlaytime);
-        return new HashMap<>(leaderboardHearts);
+        Map<UUID,Long> source=switch(type){
+            case "money"->cash;
+            case "playtime"->leaderboardPlaytime;
+            default->leaderboardHearts;
+        };
+        Map<UUID,Long> baseline=switch(type){
+            case "money"->leaderboardMoneyBaseline;
+            case "playtime"->leaderboardPlaytimeBaseline;
+            default->leaderboardHeartsBaseline;
+        };
+        Map<UUID,Long> scores=new HashMap<>();
+        source.forEach((id,value)->{
+            long delta=Math.max(0L,value-baseline.getOrDefault(id,0L));
+            if(delta>0)scores.put(id,delta);
+        });
+        return scores;
+    }
+    private void resetLeaderboards(){
+        leaderboardMoneyBaseline.clear();
+        leaderboardMoneyBaseline.putAll(cash);
+        leaderboardPlaytimeBaseline.clear();
+        leaderboardPlaytimeBaseline.putAll(leaderboardPlaytime);
+        leaderboardHeartsBaseline.clear();
+        leaderboardHeartsBaseline.putAll(leaderboardHearts);
+        // Newly observed players are measured against their actual values
+        // unless they were present at the time of this reset.
+        save();
+        if(leaderboards!=null)leaderboards.refresh();
     }
     // Every player uses a private scoreboard for the Lifesteal sidebar.
     // Add the same rank teams to every scoreboard so everyone sees prefixes.
@@ -2550,15 +2594,25 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             openKits(player,0);return true;
         }
         if(cmd.equals("leaderboard")||cmd.equals("leaderboards")){
-            if(!(sender instanceof Player player)){sender.sendMessage("Use this command in-game.");return true;}
-            if(!player.hasPermission("diddyblud.admin")){
-                player.sendMessage("§cOnly OPs can place leaderboards.");return true;
+            if(!sender.hasPermission("diddyblud.admin")){
+                sender.sendMessage("§cOnly OPs can manage leaderboards.");return true;
+            }
+            if(args.length==1&&args[0].equalsIgnoreCase("wipe")){
+                resetLeaderboards();
+                sender.sendMessage("§aReset money, hearts and playtime leaderboard rankings.");
+                sender.sendMessage("§7Player balances, heart counts and existing playtime were preserved.");
+                getLogger().info(sender.getName()+" reset all leaderboard rankings.");
+                return true;
+            }
+            if(!(sender instanceof Player player)){
+                sender.sendMessage("§eUsage: /leaderboard wipe (console), or place/remove in-game.");return true;
             }
             if(args.length<1||args.length>2||
                 !(args[0].equalsIgnoreCase("money")||args[0].equalsIgnoreCase("playtime")||
                   args[0].equalsIgnoreCase("hearts"))||
                 (args.length==2&&!args[1].equalsIgnoreCase("remove"))){
                 player.sendMessage("§eUsage: /leaderboard <money|playtime|hearts> [remove]");
+                player.sendMessage("§eOr: /leaderboard wipe (reset all ranking scores)");
                 return true;
             }
             String type=args[0].toLowerCase(Locale.ROOT);
