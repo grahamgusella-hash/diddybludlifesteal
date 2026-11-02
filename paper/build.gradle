@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.example'
-version = '0.8.28-paper'
+version = '0.8.29-paper'
 
 repositories {
     mavenCentral()
