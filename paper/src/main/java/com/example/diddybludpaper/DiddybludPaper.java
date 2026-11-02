@@ -79,6 +79,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,UUID> viewedInventories=new HashMap<>();
     // Command-specific player restrictions, including commands owned by other plugins.
     private final Map<UUID,Set<String>> blockedPlayerCommands=new HashMap<>();
+    private final Map<String,Set<String>> blockedGroupCommands=new TreeMap<>();
+    private final Map<UUID,String> playerPermissionGroups=new HashMap<>();
+    private final Map<UUID,String> permissionSearches=new HashMap<>();
+    private final Map<UUID,String> permissionSearchTargets=new HashMap<>();
+    private final Set<UUID> awaitingPermissionGroupName=new HashSet<>();
+
     // Captured ClickVillagers head retains the entire original ItemStack metadata.
     private ItemStack clickVillagerShopTemplate;
     private static final String CLICK_VILLAGER_SHOP_ID="CLICKVILLAGER_CAPTURED";
@@ -260,6 +266,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
+        ConfigurationSection groups=y.getConfigurationSection("permission-groups");
+        if(groups!=null)for(String group:groups.getKeys(false))
+            if(group.matches("[a-z0-9_-]{1,24}"))
+                blockedGroupCommands.put(group,new HashSet<>(groups.getStringList(group)));
+        ConfigurationSection members=y.getConfigurationSection("permission-group-members");
+        if(members!=null)for(String key:members.getKeys(false))try{
+            String group=members.getString(key,"");
+            if(blockedGroupCommands.containsKey(group))
+                playerPermissionGroups.put(UUID.fromString(key),group);
+        }catch(IllegalArgumentException ignored){}
         ConfigurationSection blocked=y.getConfigurationSection("blocked-player-commands");
         if(blocked!=null)for(String id:blocked.getKeys(false))try{
             blockedPlayerCommands.put(UUID.fromString(id),
@@ -434,6 +450,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     public void save(){
         YamlConfiguration y=new YamlConfiguration();
         y.set("heart-cap",heartCap);
+        blockedGroupCommands.forEach((group,commands)->
+            y.set("permission-groups."+group,new ArrayList<>(commands)));
+        playerPermissionGroups.forEach((id,group)->
+            y.set("permission-group-members."+id,group));
         blockedPlayerCommands.forEach((id,commands)->
             y.set("blocked-player-commands."+id,new ArrayList<>(commands)));
         leaderboardMoneyBaseline.forEach((id,v)->y.set("leaderboard-baselines.money."+id,v));
@@ -1308,8 +1328,12 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private List<Command> permissionCommands(){
         Map<String,Command> registered=Bukkit.getCommandMap().getKnownCommands();
         Map<String,Command> unique=new TreeMap<>();
-        for(Command command:registered.values())
+        for(Command command:registered.values()){
+            // Show actual plugin commands, not vanilla/Bukkit internals,
+            // namespaced duplicates or individual aliases.
+            if(!(command instanceof PluginCommand))continue;
             unique.putIfAbsent(permissionCommandId(command),command);
+        }
         return new ArrayList<>(unique.values());
     }
     private List<OfflinePlayer> permissionPlayers(){
@@ -1323,6 +1347,116 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             p.getName()==null?"~"+p.getUniqueId():
                 p.getName().toLowerCase(Locale.ROOT)));
         return players;
+    }
+    private List<Command> filteredPermissionCommands(UUID admin){
+        String search=permissionSearches.getOrDefault(admin,"").toLowerCase(Locale.ROOT);
+        List<Command> result=new ArrayList<>();
+        for(Command c:permissionCommands()){
+            if(search.isBlank()||c.getName().toLowerCase(Locale.ROOT).contains(search)||
+                (c instanceof PluginCommand pc&&
+                    pc.getPlugin().getName().toLowerCase(Locale.ROOT).contains(search)))
+                result.add(c);
+        }
+        return result;
+    }
+    private void beginPermissionSearch(Player admin,String target){
+        permissionSearchTargets.put(admin.getUniqueId(),target);
+        admin.closeInventory();
+        admin.sendMessage("§eType a command or plugin name in chat to search.");
+        admin.sendMessage("§7Type §fclear §7to remove the search, or §fcancel §7to go back.");
+    }
+    private void openPermissionGroups(Player admin,int page){
+        List<String> names=new ArrayList<>(blockedGroupCommands.keySet());
+        int last=Math.max(0,(names.size()-1)/45);
+        page=Math.max(0,Math.min(page,last));
+        Inventory inv=Bukkit.createInventory(
+            new MenuHolder("permsgroups",page,admin.getUniqueId()),54,"§6§lPermission Groups");
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<45&&page*45+i<names.size();i++){
+            String group=names.get(page*45+i);
+            ItemStack item=icon(Material.BOOK,"§e"+group);
+            ItemMeta meta=item.getItemMeta();
+            long members=playerPermissionGroups.values().stream().filter(group::equals).count();
+            meta.setLore(List.of("§7Members: §f"+members,
+                "§7Blocked commands: §c"+blockedGroupCommands.get(group).size(),
+                "§eLeft-click: edit group commands",
+                "§eRight-click: add/remove members",
+                "§cShift-right-click: delete group"));
+            item.setItemMeta(meta);inv.setItem(i,item);
+        }
+        inv.setItem(45,icon(Material.ARROW,"§ePrevious"));
+        inv.setItem(48,icon(Material.EMERALD_BLOCK,"§aCreate Group (type name in chat)"));
+        inv.setItem(49,icon(Material.ARROW,"§eBack to players"));
+        inv.setItem(53,icon(Material.ARROW,"§eNext"));
+        admin.openInventory(inv);
+    }
+    private void openPermissionGroupMembers(Player admin,String group,int page){
+        List<OfflinePlayer> players=permissionPlayers();
+        int last=Math.max(0,(players.size()-1)/45);
+        page=Math.max(0,Math.min(page,last));
+        Inventory inv=Bukkit.createInventory(new MenuHolder("permsmembers:"+group,page,admin.getUniqueId()),
+            54,"§6Members: "+group.substring(0,Math.min(20,group.length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<45&&page*45+i<players.size();i++){
+            OfflinePlayer target=players.get(page*45+i);
+            String current=playerPermissionGroups.get(target.getUniqueId());
+            ItemStack item=icon(group.equals(current)?Material.LIME_DYE:Material.GRAY_DYE,
+                "§e"+(target.getName()==null?target.getUniqueId().toString().substring(0,8):target.getName()));
+            ItemMeta meta=item.getItemMeta();
+            meta.setLore(List.of(group.equals(current)?"§aIn this group":"§7Group: "+(current==null?"none":current),
+                "§eClick to "+(group.equals(current)?"remove":"assign") ));
+            item.setItemMeta(meta);inv.setItem(i,item);
+        }
+        inv.setItem(45,icon(Material.ARROW,"§ePrevious"));
+        inv.setItem(49,icon(Material.ARROW,"§eBack to groups"));
+        inv.setItem(53,icon(Material.ARROW,"§eNext"));
+        admin.openInventory(inv);
+    }
+    private void openPermissionGroupCommands(Player admin,String group,int page){
+        openPermissionCommandList(admin,"permsgroupcmd:"+group,page);
+    }
+    private void openPermissionCommandList(Player admin,String kind,int page){
+        List<Command> commands=filteredPermissionCommands(admin.getUniqueId());
+        int last=Math.max(0,(commands.size()-1)/45);
+        page=Math.max(0,Math.min(page,last));
+        boolean group=kind.startsWith("permsgroupcmd:");
+        String target=kind.substring(kind.indexOf(':')+1);
+        String name=group?target:Bukkit.getOfflinePlayer(UUID.fromString(target)).getName();
+        if(name==null)name=target.substring(0,Math.min(8,target.length()));
+        Inventory inv=Bukkit.createInventory(new MenuHolder(kind,page,admin.getUniqueId()),
+            54,"§6Commands: "+name.substring(0,Math.min(16,name.length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        Set<String> blocked=group?blockedGroupCommands.getOrDefault(target,Set.of()):
+            blockedPlayerCommands.getOrDefault(UUID.fromString(target),Set.of());
+        for(int i=0;i<45&&page*45+i<commands.size();i++){
+            Command command=commands.get(page*45+i);
+            String id=permissionCommandId(command);
+            boolean allowed=!blocked.contains(id);
+            ItemStack item=icon(allowed?Material.LIME_DYE:Material.RED_DYE,
+                (allowed?"§aTRUE §7":"§cFALSE §7")+"/"+command.getName());
+            ItemMeta meta=item.getItemMeta();
+            List<String> lore=new ArrayList<>(List.of(
+                "§7Plugin: §f"+((PluginCommand)command).getPlugin().getName(),
+                "§7Command: §f/"+command.getName(),
+                "§7Group/player setting: "+(allowed?"§aTRUE":"§cFALSE"),
+                "§eClick to toggle",
+                "§8TRUE means not blocked here"));
+            if(!group){
+                String memberGroup=playerPermissionGroups.get(UUID.fromString(target));
+                if(memberGroup!=null){
+                    lore.add("§7Group: §f"+memberGroup);
+                    if(blockedGroupCommands.getOrDefault(memberGroup,Set.of()).contains(id))
+                        lore.add("§cBlocked by group too");
+                }
+            }
+            meta.setLore(lore);item.setItemMeta(meta);inv.setItem(i,item);
+        }
+        inv.setItem(45,icon(Material.ARROW,"§ePrevious"));
+        inv.setItem(48,icon(Material.COMPASS,"§bSearch commands in chat"));
+        inv.setItem(49,icon(Material.ARROW,group?"§eBack to groups":"§eBack to players"));
+        inv.setItem(50,icon(Material.MILK_BUCKET,"§eClear search"));
+        inv.setItem(53,icon(Material.ARROW,"§eNext"));
+        admin.openInventory(inv);
     }
     private void openPermissionPlayers(Player admin,int page){
         List<OfflinePlayer> players=permissionPlayers();
@@ -1346,41 +1480,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             inv.setItem(i,icon);
         }
         inv.setItem(45,icon(Material.ARROW,"§ePrevious page"));
+        inv.setItem(48,icon(Material.BOOKSHELF,"§eManage Groups"));
         inv.setItem(49,icon(Material.BARRIER,"§cClose"));
         inv.setItem(53,icon(Material.ARROW,"§eNext page"));
         admin.openInventory(inv);
     }
     private void openPermissionCommands(Player admin,UUID targetId,int page){
-        List<Command> commands=permissionCommands();
-        int last=Math.max(0,(commands.size()-1)/45);
-        page=Math.max(0,Math.min(page,last));
-        OfflinePlayer target=Bukkit.getOfflinePlayer(targetId);
-        String name=target.getName()==null?targetId.toString().substring(0,8):target.getName();
-        Inventory inv=Bukkit.createInventory(
-            new MenuHolder("permscommands:"+targetId,page,admin.getUniqueId()),54,
-            "§6§lCommands: "+name.substring(0,Math.min(16,name.length())));
-        ((MenuHolder)inv.getHolder()).inv=inv;
-        Set<String> blocked=blockedPlayerCommands.getOrDefault(targetId,Set.of());
-        for(int i=0;i<45&&page*45+i<commands.size();i++){
-            Command command=commands.get(page*45+i);
-            String id=permissionCommandId(command);
-            boolean allowed=!blocked.contains(id);
-            ItemStack icon=icon(allowed?Material.LIME_DYE:Material.RED_DYE,
-                (allowed?"§aTRUE §7":"§cFALSE §7")+"/"+command.getName());
-            ItemMeta meta=icon.getItemMeta();
-            meta.setLore(List.of("§7Registered by: §f"+
-                    (command instanceof PluginCommand pc?pc.getPlugin().getName():"Server"),
-                "§7Command: §f/"+command.getName(),
-                "§7Current access: "+(allowed?"§aTRUE":"§cFALSE"),
-                "§eClick to change to "+(allowed?"FALSE":"TRUE"),
-                "§8This controls command execution, not permission nodes"));
-            icon.setItemMeta(meta);
-            inv.setItem(i,icon);
-        }
-        inv.setItem(45,icon(Material.ARROW,"§ePrevious page"));
-        inv.setItem(49,icon(Material.BARRIER,"§eBack to players"));
-        inv.setItem(53,icon(Material.ARROW,"§eNext page"));
-        admin.openInventory(inv);
+        openPermissionCommandList(admin,"permscommands:"+targetId,page);
     }
     @EventHandler(priority=EventPriority.LOWEST,ignoreCancelled=true)
     public void preventBlockedPlayerCommand(PlayerCommandPreprocessEvent event){
@@ -1391,8 +1497,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(command==null)return;
         String id=permissionCommandId(command);
         if(id.equalsIgnoreCase(getName()+":perms"))return;
-        if(blockedPlayerCommands.getOrDefault(event.getPlayer().getUniqueId(),Set.of())
-                .contains(id)){
+        UUID playerId=event.getPlayer().getUniqueId();
+        String group=playerPermissionGroups.get(playerId);
+        if(blockedPlayerCommands.getOrDefault(playerId,Set.of()).contains(id)||
+            (group!=null&&blockedGroupCommands.getOrDefault(group,Set.of()).contains(id))){
             event.setCancelled(true);
             event.getPlayer().sendMessage("§cYou are not allowed to use /"+command.getName()+".");
         }
