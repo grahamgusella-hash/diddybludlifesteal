@@ -15,7 +15,7 @@ import java.util.*;
 
 /** Physical, stackable banknotes. Only items signed by this plugin can be deposited. */
 final class MoneyBills implements Listener {
-    private static final long[] VALUES={1_000_000_000L,1_000_000L,100_000L,10_000L,1_000L,100L,10L,1L};
+    private static final long[] VALUES={1_000_000_000L,100_000_000L,1_000_000L,100_000L,10_000L,1_000L,100L,10L,1L};
     private final DiddybludPaper plugin;
     private final NamespacedKey key;
     MoneyBills(DiddybludPaper plugin){this.plugin=plugin;this.key=new NamespacedKey(plugin,"bill_value");}
@@ -24,7 +24,7 @@ final class MoneyBills implements Listener {
         ItemStack item=new ItemStack(Material.PAPER,amount);
         ItemMeta meta=item.getItemMeta();
         meta.setDisplayName("§a§lDiddyblud SMP §f$"+String.format(Locale.US,"%,d",value));
-        String suffix=value>=1_000_000_000L?"1b":value>=1_000_000L?"1m":value>=100_000L?"100k":value>=10_000L?"10k":value>=1_000L?"1k":String.valueOf(value);
+        String suffix=value>=1_000_000_000L?"1b":value>=100_000_000L?"100m":value>=1_000_000L?"1m":value>=100_000L?"100k":value>=10_000L?"10k":value>=1_000L?"1k":String.valueOf(value);
         meta.setItemModel(new NamespacedKey("diddyblud","bill_"+suffix));
         meta.setLore(List.of("§7Official Diddyblud SMP banknote","§eValue: §f$"+String.format(Locale.US,"%,d",value),
             "§7Right-click to redeem this stack or use §f/money deposit§7."));
@@ -66,7 +66,7 @@ final class MoneyBills implements Listener {
         double roll=java.util.concurrent.ThreadLocalRandom.current().nextDouble();
         long value=roll<0.45?1L:roll<0.70?10L:roll<0.84?100L:
                    roll<0.93?1_000L:roll<0.976?10_000L:
-                   roll<0.995?100_000L:roll<0.9998?1_000_000L:1_000_000_000L;
+                   roll<0.995?100_000L:roll<0.9997?1_000_000L:roll<0.99997?100_000_000L:1_000_000_000L;
         int count=value<=10?1+java.util.concurrent.ThreadLocalRandom.current().nextInt(4):1;
         event.getLoot().add(note(value,count));
     }
