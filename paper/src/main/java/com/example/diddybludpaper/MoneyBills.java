@@ -62,9 +62,6 @@ final class MoneyBills implements Listener {
         if(!(event.getInventoryHolder() instanceof org.bukkit.block.Chest)
             && !(event.getInventoryHolder() instanceof org.bukkit.block.Barrel)
             && !(event.getInventoryHolder() instanceof org.bukkit.block.ShulkerBox))return;
-        if(!event.getLootContext().getWorld().getEnvironment().equals(World.Environment.NORMAL)
-           && !event.getLootContext().getWorld().getEnvironment().equals(World.Environment.NETHER)
-           && !event.getLootContext().getWorld().getEnvironment().equals(World.Environment.THE_END))return;
         if(java.util.concurrent.ThreadLocalRandom.current().nextDouble()>=0.28)return;
         double roll=java.util.concurrent.ThreadLocalRandom.current().nextDouble();
         long value=roll<0.45?1L:roll<0.70?10L:roll<0.84?100L:
