@@ -115,6 +115,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private NamespacedKey heartKey,spawnerKey,halloweenKey,areaPickaxeKey,infiniteRocketKey,infiniteWaterKey;
     private File dataFile;
     private PaperSpawners spawners;
+    private MoneyBills moneyBills;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
@@ -130,6 +131,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         infiniteWaterKey=new NamespacedKey(this,"infinite_water_bucket");
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
+        moneyBills=new MoneyBills(this);
         for(World world:getServer().getWorlds())setRadarOff(world);
         leaderboards=new LeaderboardHolograms(this,this::leaderboardScores);
         spawners=new PaperSpawners(this,spawnerKey);
@@ -3129,6 +3131,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     return true;
                 }
                 case "money","setmoney","givemoney" ->{
+                    if(cmd.equals("money") && args.length>0 && args[0].equalsIgnoreCase("withdraw")){
+                        if(args.length!=2){p.sendMessage("§eUsage: /money withdraw <amount>");return true;}
+                        moneyBills.withdraw(p,parseAmount(args[1]));return true;
+                    }
+                    if(cmd.equals("money") && args.length>0 && args[0].equalsIgnoreCase("deposit")){
+                        if(args.length!=1){p.sendMessage("§eUsage: /money deposit");return true;}
+                        moneyBills.deposit(p);return true;
+                    }
+
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
                     boolean directSet=cmd.equals("setmoney");
                     boolean directGive=cmd.equals("givemoney");
