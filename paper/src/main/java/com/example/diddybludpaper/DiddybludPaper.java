@@ -132,6 +132,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
         moneyBills=new MoneyBills(this);
+        getServer().getPluginManager().registerEvents(moneyBills,this);
         for(World world:getServer().getWorlds())setRadarOff(world);
         leaderboards=new LeaderboardHolograms(this,this::leaderboardScores);
         spawners=new PaperSpawners(this,spawnerKey);
