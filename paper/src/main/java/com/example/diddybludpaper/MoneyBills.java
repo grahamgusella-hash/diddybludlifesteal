@@ -2,6 +2,11 @@ package com.example.diddybludpaper;
 
 import org.bukkit.*;
 import org.bukkit.entity.Player;
+import org.bukkit.event.*;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.world.LootGenerateEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -9,7 +14,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.util.*;
 
 /** Physical, stackable banknotes. Only items signed by this plugin can be deposited. */
-final class MoneyBills {
+final class MoneyBills implements Listener {
     private static final long[] VALUES={1_000_000_000L,1_000_000L,100_000L,10_000L,1_000L,100L,10L,1L};
     private final DiddybludPaper plugin;
     private final NamespacedKey key;
@@ -19,8 +24,10 @@ final class MoneyBills {
         ItemStack item=new ItemStack(Material.PAPER,amount);
         ItemMeta meta=item.getItemMeta();
         meta.setDisplayName("§a§lDiddyblud SMP §f$"+String.format(Locale.US,"%,d",value));
+        String suffix=value>=1_000_000_000L?"1b":value>=1_000_000L?"1m":value>=100_000L?"100k":value>=10_000L?"10k":value>=1_000L?"1k":String.valueOf(value);
+        meta.setItemModel(new NamespacedKey("diddyblud","bill_"+suffix));
         meta.setLore(List.of("§7Official Diddyblud SMP banknote","§eValue: §f$"+String.format(Locale.US,"%,d",value),
-            "§7Use §f/money deposit §7to put notes back in your balance."));
+            "§7Right-click to redeem this stack or use §f/money deposit§7."));
         meta.getPersistentDataContainer().set(key,PersistentDataType.LONG,value);
         item.setItemMeta(meta);
         return item;
@@ -32,6 +39,41 @@ final class MoneyBills {
         for(long denom:VALUES)if(denom==value)return value;
         return 0;
     }
+    @EventHandler(priority=EventPriority.HIGH,ignoreCancelled=true)
+    public void redeemOnRightClick(PlayerInteractEvent event){
+        if(event.getHand()!=EquipmentSlot.HAND)return;
+        if(event.getAction()!=Action.RIGHT_CLICK_AIR&&event.getAction()!=Action.RIGHT_CLICK_BLOCK)return;
+        Player p=event.getPlayer();
+        ItemStack held=p.getInventory().getItemInMainHand();
+        long value=denomination(held);
+        if(value==0)return;
+        event.setCancelled(true);
+        long amount=value*held.getAmount();
+        if(!plugin.credit(p.getUniqueId(),amount)){
+            p.sendMessage("§cYour balance cannot hold this amount.");return;
+        }
+        p.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+        p.sendMessage("§aRedeemed §f$"+String.format(Locale.US,"%,d",amount)+"§a from your bills.");
+    }
+
+    // Add loot once when a generated container's loot table is resolved.
+    @EventHandler(priority=EventPriority.NORMAL,ignoreCancelled=true)
+    public void onChestLoot(LootGenerateEvent event){
+        if(!(event.getInventoryHolder() instanceof org.bukkit.block.Chest)
+            && !(event.getInventoryHolder() instanceof org.bukkit.block.Barrel)
+            && !(event.getInventoryHolder() instanceof org.bukkit.block.ShulkerBox))return;
+        if(!event.getLootContext().getWorld().getEnvironment().equals(World.Environment.NORMAL)
+           && !event.getLootContext().getWorld().getEnvironment().equals(World.Environment.NETHER)
+           && !event.getLootContext().getWorld().getEnvironment().equals(World.Environment.THE_END))return;
+        if(java.util.concurrent.ThreadLocalRandom.current().nextDouble()>=0.28)return;
+        double roll=java.util.concurrent.ThreadLocalRandom.current().nextDouble();
+        long value=roll<0.45?1L:roll<0.70?10L:roll<0.84?100L:
+                   roll<0.93?1_000L:roll<0.976?10_000L:
+                   roll<0.995?100_000L:roll<0.9998?1_000_000L:1_000_000_000L;
+        int count=value<=10?1+java.util.concurrent.ThreadLocalRandom.current().nextInt(4):1;
+        event.getLoot().add(note(value,count));
+    }
+
     void withdraw(Player player,long amount){
         if(amount<=0){player.sendMessage("§cAmount must be positive.");return;}
         if(plugin.funds(player.getUniqueId())<amount){player.sendMessage("§cNot enough money.");return;}
