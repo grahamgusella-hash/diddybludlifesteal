@@ -3240,18 +3240,36 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     p.sendMessage("§e/shopedit deleteitem <item id> removes a listing.");return true;
                 }
                 case "sell" ->{
-                    if(args.length==3&&args[0].equalsIgnoreCase("price")&&p.hasPermission("diddyblud.admin")){
-                        String id=id(p.getInventory().getItemInMainHand());
-                        if(id==null){p.sendMessage("Hold the item.");return true;}
-                        if(id.equals(CLICK_VILLAGER_SHOP_ID)){
+                    if(args.length>0&&args[0].equalsIgnoreCase("price")){
+                        if(!p.hasPermission("diddyblud.admin")){
+                            p.sendMessage("§cOnly admins can edit shop prices.");return true;
+                        }
+                        if(args.length!=2&&args.length!=3){
+                            p.sendMessage("§e/sell price <sell price> §7or §e/sell price <buy price> <sell price>");
+                            p.sendMessage("§7Hold the item to edit.");return true;
+                        }
+                        String itemId=id(p.getInventory().getItemInMainHand());
+                        if(itemId==null){p.sendMessage("§cHold the item whose price you want to change.");return true;}
+                        long newBuy=args.length==3?parseSetAmount(args[1]):buy.getOrDefault(itemId,0L);
+                        long newSell=parseSetAmount(args[args.length-1]);
+                        if(itemId.equals(CLICK_VILLAGER_SHOP_ID)){
                             clickVillagerShopTemplate=p.getInventory().getItemInMainHand().clone();
                             clickVillagerShopTemplate.setAmount(1);
-                            args[2]="0";
+                            newSell=0L;
                             p.sendMessage("§eCaptured villagers are buy-only. Sell price fixed at $0.");
                         }
-                        deletedShopListings.remove(id);
-                        buy.put(id,parseAmount(args[1]));sell.put(id,parseAmount(args[2]));
-                        assignments.putIfAbsent(id,"storage");save();p.sendMessage("Saved buy/sell for "+id);return true;
+                        deletedShopListings.remove(itemId);
+                        buy.put(itemId,newBuy);
+                        sell.put(itemId,newSell);
+                        assignments.putIfAbsent(itemId,"storage");
+                        if(!itemOrder.contains(itemId))itemOrder.add(itemId);
+                        save();
+                        p.sendMessage("§aSaved prices for §f"+itemId+"§a: buy $"+newBuy+" / sell $"+newSell);
+                        return true;
+                    }
+                    if(args.length>0){
+                        p.sendMessage("§eUsage: /sell price <sell price> or /sell price <buy price> <sell price>");
+                        return true;
                     }
                     openSell(p);return true;
                 }
