@@ -1599,11 +1599,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
-        if(type.equals("permsplayers")||type.startsWith("permscommands:")){
+        if(type.equals("permsplayers")||type.equals("permsgroups")||
+            type.startsWith("permscommands:")||type.startsWith("permsgroupcmd:")||
+            type.startsWith("permsmembers:")){
             e.setCancelled(true);
             if(!p.hasPermission("diddyblud.admin")){p.closeInventory();return;}
             if(type.equals("permsplayers")){
                 if(slot==45){openPermissionPlayers(p,h.page-1);return;}
+                if(slot==48){openPermissionGroups(p,0);return;}
                 if(slot==49){p.closeInventory();return;}
                 if(slot==53){openPermissionPlayers(p,h.page+1);return;}
                 if(slot<0||slot>=45)return;
@@ -1613,27 +1616,76 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     openPermissionCommands(p,all.get(index).getUniqueId(),0);
                 return;
             }
-            UUID targetId;
-            try{targetId=UUID.fromString(type.substring("permscommands:".length()));}
-            catch(IllegalArgumentException ex){p.closeInventory();return;}
-            if(slot==45){openPermissionCommands(p,targetId,h.page-1);return;}
-            if(slot==49){openPermissionPlayers(p,0);return;}
-            if(slot==53){openPermissionCommands(p,targetId,h.page+1);return;}
-            if(slot<0||slot>=45)return;
-            List<Command> all=permissionCommands();
-            int index=h.page*45+slot;
-            if(index>=all.size())return;
-            String commandId=permissionCommandId(all.get(index));
-            if(commandId.equalsIgnoreCase(getName()+":perms")){
-                p.sendMessage("§cCannot disable the permissions editor itself.");
+            if(type.equals("permsgroups")){
+                if(slot==45){openPermissionGroups(p,h.page-1);return;}
+                if(slot==48){
+                    awaitingPermissionGroupName.add(p.getUniqueId());
+                    p.closeInventory();
+                    p.sendMessage("§eType a new group name in chat (letters/numbers/_/-), or cancel.");
+                    return;
+                }
+                if(slot==49){openPermissionPlayers(p,0);return;}
+                if(slot==53){openPermissionGroups(p,h.page+1);return;}
+                if(slot<0||slot>=45)return;
+                List<String> groups=new ArrayList<>(blockedGroupCommands.keySet());
+                int index=h.page*45+slot;if(index>=groups.size())return;
+                String group=groups.get(index);
+                if(e.isShiftClick()&&e.isRightClick()){
+                    blockedGroupCommands.remove(group);
+                    playerPermissionGroups.values().removeIf(group::equals);
+                    save();openPermissionGroups(p,h.page);
+                }else if(e.isRightClick())openPermissionGroupMembers(p,group,0);
+                else openPermissionGroupCommands(p,group,0);
                 return;
             }
-            Set<String> blocked=blockedPlayerCommands.computeIfAbsent(
-                targetId,k->new HashSet<>());
+            boolean groupMemberView=type.startsWith("permsmembers:");
+            boolean groupCommands=type.startsWith("permsgroupcmd:");
+            String target=type.substring(type.indexOf(':')+1);
+            if(groupMemberView){
+                if(!blockedGroupCommands.containsKey(target)){openPermissionGroups(p,0);return;}
+                if(slot==45){openPermissionGroupMembers(p,target,h.page-1);return;}
+                if(slot==49){openPermissionGroups(p,0);return;}
+                if(slot==53){openPermissionGroupMembers(p,target,h.page+1);return;}
+                if(slot<0||slot>=45)return;
+                List<OfflinePlayer> players=permissionPlayers();
+                int index=h.page*45+slot;if(index>=players.size())return;
+                UUID id=players.get(index).getUniqueId();
+                if(target.equals(playerPermissionGroups.get(id)))
+                    playerPermissionGroups.remove(id);
+                else playerPermissionGroups.put(id,target);
+                save();openPermissionGroupMembers(p,target,h.page);
+                return;
+            }
+            UUID targetId=null;
+            if(!groupCommands)try{targetId=UUID.fromString(target);}
+            catch(IllegalArgumentException ex){p.closeInventory();return;}
+            if(groupCommands&&!blockedGroupCommands.containsKey(target)){
+                openPermissionGroups(p,0);return;
+            }
+            if(slot==45){openPermissionCommandList(p,type,h.page-1);return;}
+            if(slot==48){beginPermissionSearch(p,type);return;}
+            if(slot==49){
+                if(groupCommands)openPermissionGroups(p,0);
+                else openPermissionPlayers(p,0);
+                return;
+            }
+            if(slot==50){
+                permissionSearches.remove(p.getUniqueId());
+                openPermissionCommandList(p,type,0);return;
+            }
+            if(slot==53){openPermissionCommandList(p,type,h.page+1);return;}
+            if(slot<0||slot>=45)return;
+            List<Command> all=filteredPermissionCommands(p.getUniqueId());
+            int index=h.page*45+slot;if(index>=all.size())return;
+            String commandId=permissionCommandId(all.get(index));
+            if(commandId.equalsIgnoreCase(getName()+":perms")){
+                p.sendMessage("§cCannot disable the permissions editor itself.");return;
+            }
+            Set<String> blocked=groupCommands?blockedGroupCommands.get(target):
+                blockedPlayerCommands.computeIfAbsent(targetId,k->new HashSet<>());
             if(!blocked.add(commandId))blocked.remove(commandId);
-            if(blocked.isEmpty())blockedPlayerCommands.remove(targetId);
-            save();
-            openPermissionCommands(p,targetId,h.page);
+            if(!groupCommands&&blocked.isEmpty())blockedPlayerCommands.remove(targetId);
+            save();openPermissionCommandList(p,type,h.page);
             return;
         }
         if(type.equals("invsee")){
@@ -2585,7 +2637,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onDrag(InventoryDragEvent e){
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.startsWith("vault:"))return;
-        if(h.kind.equals("permsplayers")||h.kind.startsWith("permscommands:")){
+        if(h.kind.equals("permsplayers")||h.kind.equals("permsgroups")||
+            h.kind.startsWith("permscommands:")||h.kind.startsWith("permsgroupcmd:")||
+            h.kind.startsWith("permsmembers:")){
             e.setCancelled(true);return;
         }
         if(h.kind.equals("invsee")){
@@ -2607,6 +2661,40 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             return;
         }
         e.setCancelled(true);
+    }
+    @EventHandler(priority=EventPriority.HIGHEST)
+    public void permissionsChat(AsyncPlayerChatEvent event){
+        UUID id=event.getPlayer().getUniqueId();
+        if(!awaitingPermissionGroupName.contains(id)&&
+            !permissionSearchTargets.containsKey(id))return;
+        event.setCancelled(true);
+        String message=event.getMessage().trim().toLowerCase(Locale.ROOT);
+        getServer().getScheduler().runTask(this,()->{
+            Player player=Bukkit.getPlayer(id);
+            if(player==null)return;
+            if(awaitingPermissionGroupName.remove(id)){
+                if(message.equals("cancel")){openPermissionGroups(player,0);return;}
+                if(!message.matches("[a-z0-9_-]{1,24}")){
+                    player.sendMessage("§cGroup name must be 1–24 letters, numbers, _ or -.");
+                    openPermissionGroups(player,0);return;
+                }
+                if(blockedGroupCommands.containsKey(message)){
+                    player.sendMessage("§cThat group already exists.");
+                    openPermissionGroups(player,0);return;
+                }
+                blockedGroupCommands.put(message,new HashSet<>());
+                save();openPermissionGroups(player,0);
+                player.sendMessage("§aCreated permissions group: "+message);
+                return;
+            }
+            String target=permissionSearchTargets.remove(id);
+            if(target==null)return;
+            if(!message.equals("cancel")){
+                if(message.equals("clear"))permissionSearches.remove(id);
+                else permissionSearches.put(id,message.substring(0,Math.min(64,message.length())));
+            }
+            openPermissionCommandList(player,target,0);
+        });
     }
     @EventHandler(priority=EventPriority.HIGH)
     public void kitNameChat(AsyncPlayerChatEvent event){
