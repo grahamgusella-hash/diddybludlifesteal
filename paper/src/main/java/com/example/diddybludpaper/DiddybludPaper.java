@@ -82,6 +82,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<String,Set<String>> blockedGroupCommands=new TreeMap<>();
     private final Map<UUID,String> playerPermissionGroups=new HashMap<>();
     private final Map<UUID,String> permissionSearches=new HashMap<>();
+    private final Map<UUID,String> permissionPluginFilters=new HashMap<>();
     private final Map<UUID,String> permissionSearchTargets=new HashMap<>();
     private final Set<UUID> awaitingPermissionGroupName=new HashSet<>();
 
@@ -1350,14 +1351,49 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     private List<Command> filteredPermissionCommands(UUID admin){
         String search=permissionSearches.getOrDefault(admin,"").toLowerCase(Locale.ROOT);
+        String plugin=permissionPluginFilters.get(admin);
         List<Command> result=new ArrayList<>();
         for(Command c:permissionCommands()){
+            if(!(c instanceof PluginCommand pc))continue;
+            String owner=pc.getPlugin().getName();
+            if(plugin!=null&&!plugin.equalsIgnoreCase(owner))continue;
             if(search.isBlank()||c.getName().toLowerCase(Locale.ROOT).contains(search)||
-                (c instanceof PluginCommand pc&&
-                    pc.getPlugin().getName().toLowerCase(Locale.ROOT).contains(search)))
+                owner.toLowerCase(Locale.ROOT).contains(search))
                 result.add(c);
         }
         return result;
+    }
+    private List<String> permissionPluginNames(){
+        Set<String> names=new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for(Command command:permissionCommands())
+            if(command instanceof PluginCommand pc)
+                names.add(pc.getPlugin().getName());
+        return new ArrayList<>(names);
+    }
+    private void openPermissionPluginFilter(Player admin,String target,int page){
+        List<String> plugins=permissionPluginNames();
+        int last=Math.max(0,(plugins.size()-1)/45);
+        page=Math.max(0,Math.min(page,last));
+        Inventory inv=Bukkit.createInventory(
+            new MenuHolder("permsplugins|"+target,page,admin.getUniqueId()),54,
+            "§6§lFilter by Plugin");
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        String active=permissionPluginFilters.get(admin.getUniqueId());
+        for(int i=0;i<45&&page*45+i<plugins.size();i++){
+            String name=plugins.get(page*45+i);
+            boolean selected=name.equalsIgnoreCase(active==null?"":active);
+            ItemStack item=icon(selected?Material.LIME_DYE:Material.BOOK,
+                (selected?"§a✔ ":"§e")+name);
+            ItemMeta meta=item.getItemMeta();
+            meta.setLore(List.of(selected?"§aCurrently selected":"§7Click to show only this plugin",
+                "§7Works with the command search box"));
+            item.setItemMeta(meta);inv.setItem(i,item);
+        }
+        inv.setItem(45,icon(Material.ARROW,"§ePrevious page"));
+        inv.setItem(48,icon(Material.MILK_BUCKET,"§aAll Plugins (remove filter)"));
+        inv.setItem(49,icon(Material.ARROW,"§eBack to commands"));
+        inv.setItem(53,icon(Material.ARROW,"§eNext page"));
+        admin.openInventory(inv);
     }
     private void beginPermissionSearch(Player admin,String target){
         permissionSearchTargets.put(admin.getUniqueId(),target);
@@ -1453,6 +1489,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         }
         inv.setItem(45,icon(Material.ARROW,"§ePrevious"));
         inv.setItem(48,icon(Material.COMPASS,"§bSearch commands in chat"));
+        String chosenPlugin=permissionPluginFilters.get(admin.getUniqueId());
+        ItemStack filterButton=icon(Material.HOPPER,
+            "§bPlugin filter: §f"+(chosenPlugin==null?"All plugins":chosenPlugin));
+        ItemMeta filterMeta=filterButton.getItemMeta();
+        filterMeta.setLore(List.of("§eClick to choose a plugin",
+            "§7Only commands from that plugin will be listed",
+            "§7You can combine this with search"));
+        filterButton.setItemMeta(filterMeta);
+        inv.setItem(51,filterButton);
         inv.setItem(49,icon(Material.ARROW,group?"§eBack to groups":"§eBack to players"));
         inv.setItem(50,icon(Material.MILK_BUCKET,"§eClear search"));
         inv.setItem(53,icon(Material.ARROW,"§eNext"));
@@ -1601,9 +1646,28 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         int slot=e.getRawSlot();String type=h.kind;
         if(type.equals("permsplayers")||type.equals("permsgroups")||
             type.startsWith("permscommands:")||type.startsWith("permsgroupcmd:")||
-            type.startsWith("permsmembers:")){
+            type.startsWith("permsmembers:")||type.startsWith("permsplugins|")){
             e.setCancelled(true);
             if(!p.hasPermission("diddyblud.admin")){p.closeInventory();return;}
+            if(type.startsWith("permsplugins|")){
+                String target=type.substring("permsplugins|".length());
+                if(!(target.startsWith("permscommands:")||
+                    target.startsWith("permsgroupcmd:"))){openPermissionPlayers(p,0);return;}
+                if(slot==45){openPermissionPluginFilter(p,target,h.page-1);return;}
+                if(slot==48){
+                    permissionPluginFilters.remove(p.getUniqueId());
+                    openPermissionCommandList(p,target,0);return;
+                }
+                if(slot==49){openPermissionCommandList(p,target,0);return;}
+                if(slot==53){openPermissionPluginFilter(p,target,h.page+1);return;}
+                if(slot<0||slot>=45)return;
+                List<String> plugins=permissionPluginNames();
+                int index=h.page*45+slot;
+                if(index>=plugins.size())return;
+                permissionPluginFilters.put(p.getUniqueId(),plugins.get(index));
+                openPermissionCommandList(p,target,0);
+                return;
+            }
             if(type.equals("permsplayers")){
                 if(slot==45){openPermissionPlayers(p,h.page-1);return;}
                 if(slot==48){openPermissionGroups(p,0);return;}
@@ -1664,6 +1728,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             if(slot==45){openPermissionCommandList(p,type,h.page-1);return;}
             if(slot==48){beginPermissionSearch(p,type);return;}
+            if(slot==51){openPermissionPluginFilter(p,type,0);return;}
             if(slot==49){
                 if(groupCommands)openPermissionGroups(p,0);
                 else openPermissionPlayers(p,0);
@@ -2639,7 +2704,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(h.kind.startsWith("vault:"))return;
         if(h.kind.equals("permsplayers")||h.kind.equals("permsgroups")||
             h.kind.startsWith("permscommands:")||h.kind.startsWith("permsgroupcmd:")||
-            h.kind.startsWith("permsmembers:")){
+            h.kind.startsWith("permsmembers:")||
+            h.kind.startsWith("permsplugins|")){
             e.setCancelled(true);return;
         }
         if(h.kind.equals("invsee")){
