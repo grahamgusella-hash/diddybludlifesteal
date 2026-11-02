@@ -116,6 +116,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private File dataFile;
     private PaperSpawners spawners;
     private MoneyBills moneyBills;
+    private SellAxe sellAxe;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
@@ -132,6 +133,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
         moneyBills=new MoneyBills(this);
+        sellAxe=new SellAxe(this);
+        getServer().getPluginManager().registerEvents(sellAxe,this);
         getServer().getPluginManager().registerEvents(moneyBills,this);
         for(World world:getServer().getWorlds())setRadarOff(world);
         leaderboards=new LeaderboardHolograms(this,this::leaderboardScores);
@@ -1317,6 +1320,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(20,infiniteAreaPickaxe());
         inv.setItem(21,infiniteRocket());
         inv.setItem(22,infiniteWater());
+        inv.setItem(23,sellAxe.item());
         String[] mobs=PaperSpawners.MOBS;
         for(int i=0;i<mobs.length;i++)inv.setItem(11+i,spawners.spawner(mobs[i],1));
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
@@ -2095,6 +2099,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             else if(slot==20)give(p,infiniteAreaPickaxe());
             else if(slot==21)give(p,infiniteRocket());
             else if(slot==22)give(p,infiniteWater());
+            else if(slot==23)give(p,sellAxe.item());
             else if(slot>=11&&slot<11+PaperSpawners.MOBS.length)give(p,spawners.spawner(PaperSpawners.MOBS[slot-11],1));
         }else if(type.equals("spawners")){
             if(slot>=PaperSpawners.MOBS.length)return;
@@ -3244,6 +3249,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                         assignments.putIfAbsent(id,"storage");save();p.sendMessage("Saved buy/sell for "+id);return true;
                     }
                     openSell(p);return true;
+                }
+                case "sellaxe" ->{
+                    if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
+                    give(p,sellAxe.item());p.sendMessage("§aGiven a Sell Axe.");return true;
                 }
                 case "customitems" ->{if(p.hasPermission("diddyblud.admin"))openCustom(p);return true;}
                 case "infiniterocket" ->{
