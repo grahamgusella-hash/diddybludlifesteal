@@ -27,6 +27,10 @@ commands:
   givemoney:
     description: Give an online or offline player money (OP)
     permission: diddyblud.admin
+  veinminer:
+    description: Hold Shift and mine connected ore with a pickaxe
+  treefeller:
+    description: Hold Shift to fell a tree using an axe or bare hands
   perms:
     description: Manage player and group command restrictions with GUI search
     permission: diddyblud.admin
