@@ -41,6 +41,26 @@ final class PlayerAuctionLog {
         load();
     }
 
+    record PaymentView(String name,long amount,long time) {}
+    record AuctionView(String title,boolean active,int count,long total,List<PaymentView> payments) {}
+
+    boolean isActive(UUID owner){return active.containsKey(owner);}
+    AuctionView view(UUID owner){
+        Session session=active.get(owner);
+        if(session==null){
+            List<Session> sessions=history.getOrDefault(owner,List.of());
+            if(sessions.isEmpty())return null;
+            session=sessions.get(sessions.size()-1);
+        }
+        List<PaymentView> entries=new ArrayList<>();
+        long total=0;
+        for(Bid bid:session.payments){
+            entries.add(new PaymentView(bid.senderName,bid.amount,bid.time));
+            total=Long.MAX_VALUE-total<bid.amount?Long.MAX_VALUE:total+bid.amount;
+        }
+        return new AuctionView(session.title,session.ended==0,entries.size(),total,List.copyOf(entries));
+    }
+
     boolean handle(Player player,String[] args) {
         UUID id=player.getUniqueId();
         if(args.length==0){
