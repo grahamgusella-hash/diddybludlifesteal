@@ -1,0 +1,27 @@
+name: Build Diddyblud Casino Client
+on:
+  push:
+    paths:
+      - 'casino-client/**'
+      - '.github/workflows/build-casino-client.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
+      - name: Build Fabric 26.3 companion client
+        working-directory: casino-client
+        run: gradle build --stacktrace --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: DiddybludCasino-Fabric-26.3
+          path: casino-client/build/libs/*-0.1.0.jar
