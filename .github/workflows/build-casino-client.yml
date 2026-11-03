@@ -24,4 +24,4 @@ jobs:
         if: success()
         with:
           name: DiddybludCasino-Fabric-26.3
-          path: casino-client/build/libs/*-0.1.0.jar
+          path: casino-client/build/libs/*-0.2.0.jar
