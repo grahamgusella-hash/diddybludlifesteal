@@ -147,7 +147,7 @@ final class PlayerAuctionLog {
                         minutes=(int)positive(args[1],1,120);
                         minBid=positive(args[2],1,1_000_000_000_000L);
                         titleFrom=3;
-                    }catch(NumberFormatException|IllegalArgumentException ex){
+                    }catch(IllegalArgumentException ex){
                         player.sendMessage("§cDuration must be 1-120 minutes; minimum bid $1 to $1t.");
                         return true;
                     }
