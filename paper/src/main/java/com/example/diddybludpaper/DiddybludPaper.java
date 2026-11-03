@@ -137,8 +137,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         defaults();load();
         moneyBills=new MoneyBills(this);
         sellAxe=new SellAxe(this);
-        arcade=new DiddybludArcade(this);
         playerAuctionLog=new PlayerAuctionLog(this);
+        arcade=new DiddybludArcade(this,playerAuctionLog);
         getServer().getPluginManager().registerEvents(arcade,this);
         infiniteStorageStick=new InfiniteStorageStick(this);
         getServer().getPluginManager().registerEvents(infiniteStorageStick,this);
