@@ -118,6 +118,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private MoneyBills moneyBills;
     private SellAxe sellAxe;
     private InfiniteStorageStick infiniteStorageStick;
+    private DiddybludArcade arcade;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
@@ -135,6 +136,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         defaults();load();
         moneyBills=new MoneyBills(this);
         sellAxe=new SellAxe(this);
+        arcade=new DiddybludArcade(this);
+        getServer().getPluginManager().registerEvents(arcade,this);
         infiniteStorageStick=new InfiniteStorageStick(this);
         getServer().getPluginManager().registerEvents(infiniteStorageStick,this);
         getServer().getPluginManager().registerEvents(sellAxe,this);
@@ -182,6 +185,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Virtual spawner locations, stack counts, stored drops and XP use
         // their separate spawners.yml file.
         if(spawners!=null)spawners.save();
+        if(arcade!=null)arcade.save();
         if(leaderboards!=null)leaderboards.close();
     }
     private void captureOpenVaults(){
@@ -3273,6 +3277,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     }
                     openSell(p);return true;
                 }
+                case "gamble","arcade" ->{arcade.open(p);return true;}
                 case "sellaxe" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
                     give(p,sellAxe.item());p.sendMessage("§aGiven a Sell Axe.");return true;
