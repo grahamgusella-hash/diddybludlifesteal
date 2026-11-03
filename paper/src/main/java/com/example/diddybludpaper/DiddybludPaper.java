@@ -119,6 +119,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private SellAxe sellAxe;
     private InfiniteStorageStick infiniteStorageStick;
     private DiddybludArcade arcade;
+    private PlayerAuctionLog playerAuctionLog;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
@@ -137,6 +138,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         moneyBills=new MoneyBills(this);
         sellAxe=new SellAxe(this);
         arcade=new DiddybludArcade(this);
+        playerAuctionLog=new PlayerAuctionLog(this);
         getServer().getPluginManager().registerEvents(arcade,this);
         infiniteStorageStick=new InfiniteStorageStick(this);
         getServer().getPluginManager().registerEvents(infiniteStorageStick,this);
@@ -3197,6 +3199,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     cash.put(uid,funds(uid)-amount);
                     cash.put(target.getUniqueId(),funds(target.getUniqueId())+amount);
                     save();
+                    playerAuctionLog.onSuccessfulPay(p,target.getUniqueId(),amount);
                     p.sendMessage("§aPaid $"+amount+" to "+target.getName()+".");
                     if(target.isOnline()&&target.getPlayer()!=null)
                         target.getPlayer().sendMessage("§aReceived $"+amount+" from "+p.getName()+".");
@@ -3278,6 +3281,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     openSell(p);return true;
                 }
                 case "gamble","arcade" ->{arcade.open(p);return true;}
+                case "auctionhost" ->{return playerAuctionLog.handle(p,args);}
                 case "sellaxe" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
                     give(p,sellAxe.item());p.sendMessage("§aGiven a Sell Axe.");return true;
