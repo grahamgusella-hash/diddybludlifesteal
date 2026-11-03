@@ -3196,6 +3196,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     if(funds(target.getUniqueId())>Long.MAX_VALUE-amount){
                         p.sendMessage("§cRecipient balance would overflow.");return true;
                     }
+                    if(!playerAuctionLog.validateBid(p,target.getUniqueId(),amount))return true;
                     cash.put(uid,funds(uid)-amount);
                     cash.put(target.getUniqueId(),funds(target.getUniqueId())+amount);
                     save();
