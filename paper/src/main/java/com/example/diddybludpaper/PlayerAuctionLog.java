@@ -30,7 +30,8 @@ final class PlayerAuctionLog {
     }
     private static final class Session {
         String title;
-        long started, ended;
+        long started, ended, endsAt, minimumBid;
+        long highestBid;
         final List<Bid> payments = new ArrayList<>();
         Session(String title,long started){this.title=title;this.started=started;}
     }
@@ -39,13 +40,15 @@ final class PlayerAuctionLog {
         this.plugin=plugin;
         file=new File(plugin.getDataFolder(),"player-auction-logs.yml");
         load();
+        plugin.getServer().getScheduler().runTaskTimer(plugin,this::expire,20L,20L);
     }
 
     record PaymentView(String name,long amount,long time) {}
-    record AuctionView(String title,boolean active,int count,long total,List<PaymentView> payments) {}
+    record AuctionView(String title,boolean active,int count,long total,List<PaymentView> payments,long endsAt,long minimumBid,long highestBid) {}
 
-    boolean isActive(UUID owner){return active.containsKey(owner);}
+    boolean isActive(UUID owner){expire();return active.containsKey(owner);}
     AuctionView view(UUID owner){
+        expire();
         Session session=active.get(owner);
         if(session==null){
             List<Session> sessions=history.getOrDefault(owner,List.of());
@@ -58,7 +61,69 @@ final class PlayerAuctionLog {
             entries.add(new PaymentView(bid.senderName,bid.amount,bid.time));
             total=Long.MAX_VALUE-total<bid.amount?Long.MAX_VALUE:total+bid.amount;
         }
-        return new AuctionView(session.title,session.ended==0,entries.size(),total,List.copyOf(entries));
+        return new AuctionView(session.title,session.ended==0,entries.size(),total,List.copyOf(entries),session.endsAt,session.minimumBid,session.highestBid);
+    }
+
+    // Only successful server-side /pay transfers can become auction bids.
+    boolean validateBid(Player sender,UUID recipient,long amount){
+        expire();
+        Session auction=active.get(recipient);
+        if(auction==null)return true;
+        if(amount<auction.minimumBid){
+            sender.sendMessage("§cAuction minimum bid: $"+money(auction.minimumBid));
+            return false;
+        }
+        if(amount<=auction.highestBid){
+            sender.sendMessage("§cYour payment must exceed the current high bid of $"+money(auction.highestBid)+".");
+            return false;
+        }
+        return true;
+    }
+
+    void expire(){
+        long now=System.currentTimeMillis();
+        List<UUID> expired=new ArrayList<>();
+        for(var e:active.entrySet())if(e.getValue().endsAt>0&&e.getValue().endsAt<=now)expired.add(e.getKey());
+        for(UUID owner:expired)close(owner,true);
+    }
+    private void close(UUID owner,boolean expired){
+        Session session=active.remove(owner);
+        if(session==null)return;
+        session.ended=System.currentTimeMillis();
+        List<Session> sessions=history.computeIfAbsent(owner,k->new ArrayList<>());
+        sessions.add(session);
+        while(sessions.size()>20)sessions.remove(0);
+        save();
+        Player player=Bukkit.getPlayer(owner);
+        if(player!=null)player.sendMessage("§6[Auction] §e"+(expired?"Time expired":"Auction stopped")+" §7- "+session.title);
+    }
+    private static String enc(String s){
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    // A one-shot state reply consumed by the companion Fabric screen.
+    private void sendState(Player player){
+        AuctionView view=view(player.getUniqueId());
+        if(view==null){
+            player.sendMessage("DIDDY_AUC|none");return;
+        }
+        StringBuilder msg=new StringBuilder("DIDDY_AUC|");
+        msg.append(view.active()?"active":"ended").append('|')
+           .append(enc(view.title())).append('|')
+           .append(view.endsAt()).append('|')
+           .append(view.minimumBid()).append('|')
+           .append(view.highestBid()).append('|')
+           .append(view.count());
+        List<PaymentView> payments=view.payments();
+        for(int i=payments.size()-1;i>=0&&i>=payments.size()-8;i--){
+            PaymentView bid=payments.get(i);
+            msg.append('|').append(enc(bid.name())).append(',').append(bid.amount());
+        }
+        player.sendMessage(msg.toString());
+    }
+    private static long positive(String raw,long min,long max){
+        long value=Long.parseLong(raw);
+        if(value<min||value>max)throw new IllegalArgumentException();
+        return value;
     }
 
     boolean handle(Player player,String[] args) {
@@ -67,34 +132,66 @@ final class PlayerAuctionLog {
             help(player);return true;
         }
         switch(args[0].toLowerCase(Locale.ROOT)){
+            case "state" -> {sendState(player);return true;}
             case "start" -> {
-                if(active.containsKey(id)) {
-                    player.sendMessage("§cYou already have an active auction. Use /auctionhost stop first.");
+                if(isActive(id)){
+                    player.sendMessage("§cStop your current auction before starting another.");
                     return true;
                 }
-                if(args.length<2){
-                    player.sendMessage("§eUsage: /auctionhost start <item or auction title>");
+                // /gamble auction start <minutes> <minimum> <title...>
+                int minutes=5;
+                long minBid=1L;
+                int titleFrom=1;
+                if(args.length>=4){
+                    try{
+                        minutes=(int)positive(args[1],1,120);
+                        minBid=positive(args[2],1,1_000_000_000_000L);
+                        titleFrom=3;
+                    }catch(NumberFormatException|IllegalArgumentException ex){
+                        player.sendMessage("§cDuration must be 1-120 minutes; minimum bid $1 to $1t.");
+                        return true;
+                    }
+                }
+                if(args.length<=titleFrom){
+                    player.sendMessage("§eUsage: /gamble auction start <minutes> <minimum bid> <item>");
                     return true;
                 }
-                String title=String.join(" ",Arrays.copyOfRange(args,1,args.length)).trim();
-                if(title.length()>64){player.sendMessage("§cAuction title must be 64 characters or less.");return true;}
-                active.put(id,new Session(title,System.currentTimeMillis()));
+                String title=String.join(" ",Arrays.copyOfRange(args,titleFrom,args.length)).trim();
+                if(title.isEmpty()||title.length()>64||title.contains("|")){
+                    player.sendMessage("§cAuction item name must be 1-64 characters.");return true;
+                }
+                Session session=new Session(title,System.currentTimeMillis());
+                session.endsAt=session.started+minutes*60_000L;
+                session.minimumBid=minBid;
+                active.put(id,session);
                 save();
-                player.sendMessage("§aAuction started: §f"+title);
-                player.sendMessage("§7Successful /pay transfers to you will be logged until /auctionhost stop.");
-                player.sendMessage("§eNote: payments transfer money immediately; ending an auction does not refund bids.");
+                player.sendMessage("§aAuction started: §f"+title+" §7("+minutes+" min, minimum $"+money(minBid)+")");
+                player.sendMessage("§7Players bid using /pay "+player.getName()+" <amount>. Money is transferred immediately.");
+                player.sendMessage("§ePayments are not automatically refunded if outbid.");
+                sendState(player);
+                return true;
+            }
+            case "addtime" -> {
+                Session session=active.get(id);
+                if(session==null){player.sendMessage("§cNo active auction.");sendState(player);return true;}
+                if(args.length!=2){player.sendMessage("§eUsage: /gamble auction addtime <minutes>");return true;}
+                try{
+                    long minutes=positive(args[1],1,60);
+                    long newEnd=Math.max(session.endsAt,System.currentTimeMillis())+minutes*60_000L;
+                    if(newEnd-System.currentTimeMillis()>240L*60_000L){
+                        player.sendMessage("§cAuction cannot have more than 4 hours remaining.");return true;
+                    }
+                    session.endsAt=newEnd;
+                    save();
+                    player.sendMessage("§aAdded "+minutes+" minutes to your auction.");
+                    sendState(player);
+                }catch(IllegalArgumentException ex){player.sendMessage("§cChoose 1-60 minutes.");}
                 return true;
             }
             case "stop" -> {
-                Session session=active.remove(id);
-                if(session==null){player.sendMessage("§cYou have no active auction.");return true;}
-                session.ended=System.currentTimeMillis();
-                List<Session> sessions=history.computeIfAbsent(id,k->new ArrayList<>());
-                sessions.add(session);
-                while(sessions.size()>20)sessions.remove(0);
-                save();
-                player.sendMessage("§aAuction ended: §f"+session.title+"§a. Payments logged: §f"+session.payments.size());
-                show(player,session);
+                if(!active.containsKey(id)){player.sendMessage("§cYou have no active auction.");sendState(player);return true;}
+                close(id,false);
+                sendState(player);
                 return true;
             }
             case "log","bids","status" -> {
@@ -118,6 +215,7 @@ final class PlayerAuctionLog {
 
     private void show(Player player,Session session) {
         player.sendMessage("§6Auction: §f"+session.title+" §7("+ (session.ended==0?"ACTIVE":"ended") +")");
+        player.sendMessage("§7Minimum $"+money(session.minimumBid)+" | High bid $"+money(session.highestBid));
         if(session.payments.isEmpty()){player.sendMessage("§7No payments logged.");return;}
         long total=0; Map<UUID,Long> byPlayer=new LinkedHashMap<>();
         Map<UUID,String> names=new HashMap<>();
@@ -139,9 +237,11 @@ final class PlayerAuctionLog {
         Session session=active.get(receiverId);
         if(session==null || amount<=0)return;
         session.payments.add(new Bid(sender.getUniqueId(),sender.getName(),amount,System.currentTimeMillis()));
+        session.highestBid=Math.max(session.highestBid,amount);
         save();
         Player receiver=Bukkit.getPlayer(receiverId);
         if(receiver!=null){
+            sendState(receiver);
             receiver.sendMessage("§6[Auction] §f"+sender.getName()+" §apaid $"+money(amount)+
                 " §7("+session.payments.size()+" payments logged)");
         }
@@ -161,6 +261,9 @@ final class PlayerAuctionLog {
                 config.set(path+".title",session.title);
                 config.set(path+".started",session.started);
                 config.set(path+".ended",session.ended);
+                config.set(path+".endsAt",session.endsAt);
+                config.set(path+".minimumBid",session.minimumBid);
+                config.set(path+".highestBid",session.highestBid);
                 for(int j=0;j<session.payments.size();j++){
                     Bid bid=session.payments.get(j);
                     String item=path+".payments."+j;
@@ -188,6 +291,9 @@ final class PlayerAuctionLog {
                 String path="owners."+rawOwner+".sessions."+index;
                 Session session=new Session(config.getString(path+".title","Auction"),config.getLong(path+".started"));
                 session.ended=config.getLong(path+".ended");
+                session.endsAt=config.getLong(path+".endsAt");
+                session.minimumBid=config.getLong(path+".minimumBid",1L);
+                session.highestBid=config.getLong(path+".highestBid");
                 ConfigurationSection payments=config.getConfigurationSection(path+".payments");
                 if(payments!=null)for(String bidIndex:payments.getKeys(false)){
                     String entry=path+".payments."+bidIndex;
