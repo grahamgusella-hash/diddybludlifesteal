@@ -16,7 +16,7 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.2.1'
+          gradle-version: '9.5.0'
       - name: Build Fabric 26.3 companion client
         working-directory: casino-client
         run: gradle build --stacktrace --no-daemon
