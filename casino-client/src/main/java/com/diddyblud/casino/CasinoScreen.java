@@ -76,13 +76,19 @@ public final class CasinoScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor graphics,int mouseX,int mouseY,float delta){
-        super.extractRenderState(graphics,mouseX,mouseY,delta);
+    public void extractBackground(GuiGraphicsExtractor graphics,int mouseX,int mouseY,float delta){
+        graphics.fillGradient(0,0,width,height,0xF2141125,0xF20C172A);
         int left=width/2-156;
         graphics.fill(left-5,18,left+317,height-60,BG);
         graphics.fill(left,21,left+312,38,PANEL);
         graphics.centeredText(font,Component.literal("DIDDYBLUD  |  ARCADE"),width/2,25,GOLD);
         graphics.fill(left+10,70,left+302,72,0xFF53617B);
+    }
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor graphics,int mouseX,int mouseY,float delta){
+        super.extractRenderState(graphics,mouseX,mouseY,delta);
+        int left=width/2-156;
         if(!auctions){
             graphics.text(font,"CHOOSE YOUR STAKE",left+12,76,WHITE,true);
             graphics.text(font,"Fair game odds · in-game currency only",left+12,116,0xFFABB9D8,true);
