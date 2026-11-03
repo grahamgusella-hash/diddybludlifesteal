@@ -28,7 +28,7 @@ import java.util.*;
 final class DiddybludArcade implements Listener {
     private final DiddybludPaper plugin;
     private final PlayerAuctionLog auctionLog;
-    private final Set<UUID> awaitingAuctionTitle=new HashSet<>();
+    private final Set<UUID> awaitingAuctionTitle=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final SecureRandom random = new SecureRandom();
     private final Map<UUID, Long> selectedStake = new HashMap<>();
     private final Map<UUID, Stats> playerStats = new HashMap<>();
