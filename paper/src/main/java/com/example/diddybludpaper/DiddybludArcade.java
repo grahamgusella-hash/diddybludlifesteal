@@ -177,14 +177,51 @@ final class DiddybludArcade implements Listener {
         if(slot<=13){
             selectedStake.put(player.getUniqueId(),STAKES[slot-9]);
             open(player);
-        }else if(slot>=15&&slot<=17)play(player,slot);
+        }else if(slot>=15&&slot<=17)play(player,slot,true);
     }
     @EventHandler(priority=EventPriority.HIGHEST)
     public void onDrag(InventoryDragEvent event){
         if(event.getView().getTopInventory().getHolder() instanceof ArcadeHolder)event.setCancelled(true);
     }
 
-    private void play(Player player,int gameSlot) {
+    boolean command(Player player,String[] args){
+        if(args.length==0){open(player);return true;}
+        if(args[0].equalsIgnoreCase("play")){
+            if(args.length!=3){player.sendMessage("§e/gamble play <coin|roll|sevens> <100|1k|10k|100k|1m>");return true;}
+            int slot=switch(args[1].toLowerCase(Locale.ROOT)){
+                case "coin","coinflip" -> 15;
+                case "roll","highroll" -> 16;
+                case "sevens","luckysevens" -> 17;
+                default -> -1;
+            };
+            if(slot<0){player.sendMessage("§cUnknown game.");return true;}
+            long stake;
+            try{
+                String value=args[2].toLowerCase(Locale.ROOT);
+                stake=switch(value){
+                    case "100" -> 100L;
+                    case "1000","1k" -> 1_000L;
+                    case "10000","10k" -> 10_000L;
+                    case "100000","100k" -> 100_000L;
+                    case "1000000","1m" -> 1_000_000L;
+                    default -> -1L;
+                };
+            }catch(Exception e){stake=-1;}
+            if(stake<0){player.sendMessage("§cChoose 100, 1k, 10k, 100k, or 1m.");return true;}
+            selectedStake.put(player.getUniqueId(),stake);
+            play(player,slot,false);
+            return true;
+        }
+        if(args[0].equalsIgnoreCase("auction")){
+            if(args.length<2){openAuctions(player,0);return true;}
+            String[] forwarded=Arrays.copyOfRange(args,1,args.length);
+            return auctionLog.handle(player,forwarded);
+        }
+        open(player);
+        return true;
+    }
+
+    private void play(Player player,int gameSlot,boolean reopen) {
         UUID id=player.getUniqueId();
         long stake=selectedStake.getOrDefault(id,1_000L);
         if(stake<=0||stake>1_000_000L){player.sendMessage("§cInvalid arcade stake.");return;}
@@ -211,7 +248,7 @@ final class DiddybludArcade implements Listener {
         player.sendMessage(won?
             "§aYou won $"+fmt(payout)+"! §7(Net +$"+fmt(payout-stake)+")":
             "§cYou lost $"+fmt(stake)+".");
-        open(player);
+        if(reopen)open(player);
     }
 
     private void load(){
