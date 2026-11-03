@@ -8,6 +8,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -25,6 +27,8 @@ import java.util.*;
  */
 final class DiddybludArcade implements Listener {
     private final DiddybludPaper plugin;
+    private final PlayerAuctionLog auctionLog;
+    private final Set<UUID> awaitingAuctionTitle=new HashSet<>();
     private final SecureRandom random = new SecureRandom();
     private final Map<UUID, Long> selectedStake = new HashMap<>();
     private final Map<UUID, Stats> playerStats = new HashMap<>();
@@ -37,11 +41,14 @@ final class DiddybludArcade implements Listener {
     }
     private static final class ArcadeHolder implements InventoryHolder {
         Inventory inventory;
+        String tab="games";
+        int page=0;
         @Override public Inventory getInventory(){return inventory;}
     }
 
-    DiddybludArcade(DiddybludPaper plugin) {
+    DiddybludArcade(DiddybludPaper plugin,PlayerAuctionLog auctionLog) {
         this.plugin=plugin;
+        this.auctionLog=auctionLog;
         this.statsFile=new File(plugin.getDataFolder(),"arcade-stats.yml");
         load();
     }
@@ -65,7 +72,84 @@ final class DiddybludArcade implements Listener {
             "§7Games: §f"+stats.played,"§7Wins: §f"+stats.wins,
             "§7Wagered: §f$"+fmt(stats.wagered),
             "§7Paid out: §f$"+fmt(stats.received)));
+        inv.setItem(26,item(Material.CHEST,"§6§lAuctions §7(Tab)","§eClick to open payment auction tracker"));
         player.openInventory(inv);
+    }
+
+    private void openAuctions(Player player,int page){
+        ArcadeHolder holder=new ArcadeHolder();
+        holder.tab="auctions";
+        holder.page=page;
+        Inventory inv=Bukkit.createInventory(holder,54,"§6§lDiddyblud Auctions");
+        holder.inventory=inv;
+        PlayerAuctionLog.AuctionView view=auctionLog.view(player.getUniqueId());
+        inv.setItem(4,item(Material.CHEST,"§6§lAuctions","§7Payments received via /pay are logged","§7Only while your auction is active"));
+        inv.setItem(10,item(Material.LIME_DYE,"§aStart Auction","§7Click, then type an auction title in chat","§7Type cancel to go back"));
+        inv.setItem(12,item(Material.BOOK,"§eView Auction Payments",
+            view==null?"§7No auction history yet":"§7"+view.title()+" | "+view.count()+" payments",
+            view==null?"§7Start an auction first":"§7Total paid: $"+fmt(view.total())));
+        inv.setItem(14,item(Material.RED_DYE,"§cStop Active Auction",
+            auctionLog.isActive(player.getUniqueId())?"§eClick to close and save the log":"§7No active auction"));
+        inv.setItem(49,item(Material.ARROW,"§eBack to Games"));
+        inv.setItem(45,item(Material.ARROW,"§ePrevious Payments"));
+        inv.setItem(53,item(Material.ARROW,"§eNext Payments"));
+        if(view!=null){
+            int start=page*27;
+            List<PlayerAuctionLog.PaymentView> payments=view.payments();
+            for(int i=0;i<27 && start+i<payments.size();i++){
+                PlayerAuctionLog.PaymentView payment=payments.get(payments.size()-1-start-i);
+                inv.setItem(18+i,item(Material.PAPER,"§a$"+fmt(payment.amount()),
+                    "§7From: §f"+payment.name(),
+                    "§7Time: §f"+java.time.Instant.ofEpochMilli(payment.time()).toString()));
+            }
+        }
+        player.openInventory(inv);
+    }
+
+    private void auctionClick(Player player,int slot,int page){
+        UUID id=player.getUniqueId();
+        if(slot==49){open(player);return;}
+        if(slot==45){openAuctions(player,Math.max(0,page-1));return;}
+        if(slot==53){
+            PlayerAuctionLog.AuctionView view=auctionLog.view(id);
+            if(view!=null && (page+1)*27<view.payments().size())openAuctions(player,page+1);
+            return;
+        }
+        if(slot==10){
+            if(auctionLog.isActive(id)){
+                player.sendMessage("§cStop your current auction before starting a new one.");return;
+            }
+            awaitingAuctionTitle.add(id);
+            player.closeInventory();
+            player.sendMessage("§eEnter an auction title in chat (up to 64 characters), or type §fcancel§e.");
+            return;
+        }
+        if(slot==12){openAuctions(player,0);return;}
+        if(slot==14){
+            auctionLog.handle(player,new String[]{"stop"});
+            openAuctions(player,0);
+        }
+    }
+
+    @EventHandler(priority=EventPriority.HIGHEST)
+    public void onAuctionChat(AsyncPlayerChatEvent event){
+        UUID id=event.getPlayer().getUniqueId();
+        if(!awaitingAuctionTitle.remove(id))return;
+        event.setCancelled(true);
+        String title=event.getMessage().trim();
+        Bukkit.getScheduler().runTask(plugin,()->{
+            Player player=Bukkit.getPlayer(id);
+            if(player==null)return;
+            if(!title.equalsIgnoreCase("cancel") && !title.isBlank() && title.length()<=64){
+                auctionLog.handle(player,new String[]{"start",title});
+            }else if(!title.equalsIgnoreCase("cancel")){
+                player.sendMessage("§cAuction title must be 1 to 64 characters.");
+            }
+            openAuctions(player,0);
+        });
+    }
+    @EventHandler public void onQuit(PlayerQuitEvent event){
+        awaitingAuctionTitle.remove(event.getPlayer().getUniqueId());
     }
 
     private static ItemStack item(Material material,String name,String... lore) {
@@ -80,10 +164,15 @@ final class DiddybludArcade implements Listener {
 
     @EventHandler(priority=EventPriority.HIGHEST)
     public void onClick(InventoryClickEvent event){
-        if(!(event.getView().getTopInventory().getHolder() instanceof ArcadeHolder))return;
+        if(!(event.getView().getTopInventory().getHolder() instanceof ArcadeHolder holder))return;
         event.setCancelled(true);
         if(!(event.getWhoClicked() instanceof Player player))return;
         int slot=event.getRawSlot();
+        if(holder.tab.equals("auctions")){
+            if(slot>=0&&slot<54)auctionClick(player,slot,holder.page);
+            return;
+        }
+        if(slot==26){openAuctions(player,0);return;}
         if(slot<9||slot>=18)return;
         if(slot<=13){
             selectedStake.put(player.getUniqueId(),STAKES[slot-9]);
