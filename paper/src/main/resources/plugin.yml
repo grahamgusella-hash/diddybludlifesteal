@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.33-paper
+version: 0.8.34-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -27,6 +27,9 @@ commands:
   givemoney:
     description: Give an online or offline player money (OP)
     permission: diddyblud.admin
+  gamble:
+    description: Open Diddyblud Arcade using in-game money
+    aliases: [arcade]
   sellaxe:
     description: Give an OP the Sell Axe chest selling tool
     permission: diddyblud.admin
