@@ -3280,7 +3280,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     }
                     openSell(p);return true;
                 }
-                case "gamble","arcade" ->{arcade.open(p);return true;}
+                case "gamble","arcade" ->{return arcade.command(p,args);}
                 case "auctionhost" ->{return playerAuctionLog.handle(p,args);}
                 case "sellaxe" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
