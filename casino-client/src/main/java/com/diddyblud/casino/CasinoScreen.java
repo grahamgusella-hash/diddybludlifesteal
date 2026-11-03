@@ -11,6 +11,7 @@ import java.util.Base64;
 
 /** Full client-side casino and auction panel; the Paper server owns all auction and money state. */
 public final class CasinoScreen extends Screen {
+    private static CasinoScreen current;
     private boolean auctions=false;
     private String stake="1k";
     private String auctionTitle="";
@@ -31,7 +32,7 @@ public final class CasinoScreen extends Screen {
         if(!raw.startsWith("DIDDY_AUC|"))return false;
         var client=net.minecraft.client.Minecraft.getInstance();
         client.execute(()->{
-            if(client.screen instanceof CasinoScreen screen)screen.updateAuction(raw);
+            if(current!=null)current.updateAuction(raw);
         });
         return true;
     }
@@ -64,6 +65,7 @@ public final class CasinoScreen extends Screen {
     }
 
     @Override protected void init(){
+        current=this;
         int cx=width/2, left=cx-165;
         addRenderableWidget(Button.builder(Component.literal("GAMES"),b->{auctions=false;rebuild();})
             .bounds(left+10,43,148,20).build());
@@ -116,6 +118,11 @@ public final class CasinoScreen extends Screen {
         }
         addRenderableWidget(Button.builder(Component.literal("CLOSE"),b->onClose())
             .bounds(cx-45,height-45,90,20).build());
+    }
+
+    @Override public void removed(){
+        if(current==this)current=null;
+        super.removed();
     }
 
     private void gameButton(int x,int y,String label,String game){
