@@ -119,6 +119,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private SellAxe sellAxe;
     private InfiniteStorageStick infiniteStorageStick;
     private VerityDisc verityDisc;
+    private LordVerityDisc lordVerityDisc;
     private DiddybludArcade arcade;
     private PlayerAuctionLog playerAuctionLog;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
@@ -143,6 +144,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(arcade,this);
         infiniteStorageStick=new InfiniteStorageStick(this);
         verityDisc=new VerityDisc(this);
+        lordVerityDisc=new LordVerityDisc(this);
+        getServer().getPluginManager().registerEvents(lordVerityDisc,this);
         getServer().getPluginManager().registerEvents(verityDisc,this);
         getServer().getPluginManager().registerEvents(infiniteStorageStick,this);
         getServer().getPluginManager().registerEvents(sellAxe,this);
@@ -1337,6 +1340,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(23,sellAxe.item());
         inv.setItem(24,infiniteStorageStick.item());
         inv.setItem(25,verityDisc.item());
+        inv.setItem(26,lordVerityDisc.item());
         String[] mobs=PaperSpawners.MOBS;
         for(int i=0;i<mobs.length;i++)inv.setItem(11+i,spawners.spawner(mobs[i],1));
         decorateHalloween(inv,((MenuHolder)inv.getHolder()).kind);
@@ -2118,6 +2122,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             else if(slot==23)give(p,sellAxe.item());
             else if(slot==24)give(p,infiniteStorageStick.item());
             else if(slot==25)give(p,verityDisc.item());
+            else if(slot==26)give(p,lordVerityDisc.item());
             else if(slot>=11&&slot<11+PaperSpawners.MOBS.length)give(p,spawners.spawner(PaperSpawners.MOBS[slot-11],1));
         }else if(type.equals("spawners")){
             if(slot>=PaperSpawners.MOBS.length)return;
