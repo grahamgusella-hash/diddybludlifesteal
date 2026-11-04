@@ -144,7 +144,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(arcade,this);
         infiniteStorageStick=new InfiniteStorageStick(this);
         verityDisc=new VerityDisc(this);
-        lordVerityDisc=new LordVerityDisc(this);
+        lordVerityDisc=new LordVerityDisc(this,verityDisc);
+        verityDisc.setLordVerityDisc(lordVerityDisc);
         getServer().getPluginManager().registerEvents(lordVerityDisc,this);
         getServer().getPluginManager().registerEvents(verityDisc,this);
         getServer().getPluginManager().registerEvents(infiniteStorageStick,this);
@@ -195,6 +196,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(spawners!=null)spawners.save();
         if(arcade!=null)arcade.save();
         if(verityDisc!=null)verityDisc.close();
+        if(lordVerityDisc!=null)lordVerityDisc.close();
         if(leaderboards!=null)leaderboards.close();
     }
     private void captureOpenVaults(){
