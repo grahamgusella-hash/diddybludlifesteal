@@ -718,6 +718,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         ItemStack s=icon(Material.NETHER_STAR,"§c❤ Heart");
         s.setAmount(Math.max(1,Math.min(n,64)));
         ItemMeta m=s.getItemMeta();
+        m.setItemModel(new NamespacedKey("diddyblud","lifesteal_heart"));
         m.getPersistentDataContainer().set(heartKey,PersistentDataType.BYTE,(byte)1);s.setItemMeta(m);
         return s;
     }
