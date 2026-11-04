@@ -34,6 +34,8 @@ final class VerityDisc implements Listener {
     private final DiddybludPaper plugin;
     private final NamespacedKey key;
     private final Map<Location,BukkitTask> active=new HashMap<>();
+    private LordVerityDisc lordVerityDisc;
+    void setLordVerityDisc(LordVerityDisc other){this.lordVerityDisc=other;}
 
     VerityDisc(DiddybludPaper plugin){
         this.plugin=plugin;
@@ -62,14 +64,15 @@ final class VerityDisc implements Listener {
                 held.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.BYTE));
     }
 
-    private void stop(Location location){
+    boolean stopAt(Location location){
         BukkitTask scheduled=active.remove(location);
-        if(scheduled==null)return;
+        if(scheduled==null)return false;
         scheduled.cancel();
         for(Player viewer:location.getWorld().getPlayers()){
             if(viewer.getLocation().distanceSquared(location)<=96*96)
                 viewer.stopSound(SOUND,SoundCategory.RECORDS);
         }
+        return true;
     }
 
     @EventHandler(ignoreCancelled=true)
@@ -83,7 +86,7 @@ final class VerityDisc implements Listener {
         if(active.containsKey(location)){
             // An empty hand can also stop a previously started song.
             event.setCancelled(true);
-            stop(location);
+            stopAt(location);
             player.sendMessage("§eStopped It's Me, It's Verity.");
             return;
         }
@@ -95,6 +98,7 @@ final class VerityDisc implements Listener {
             return;
         }
 
+        if(lordVerityDisc!=null)lordVerityDisc.stopAt(location);
         // The sound is supplied by the separate optional player resource pack.
         block.getWorld().playSound(location.clone().add(0.5,0.5,0.5),
             SOUND,SoundCategory.RECORDS,4.0f,1.0f);
@@ -107,10 +111,10 @@ final class VerityDisc implements Listener {
     @EventHandler(ignoreCancelled=true)
     public void onBreak(BlockBreakEvent event){
         if(event.getBlock().getType()==Material.JUKEBOX)
-            stop(event.getBlock().getLocation());
+            stopAt(event.getBlock().getLocation());
     }
 
     void close(){
-        for(Location location:List.copyOf(active.keySet()))stop(location);
+        for(Location location:List.copyOf(active.keySet()))stopAt(location);
     }
 }
