@@ -2105,6 +2105,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             }
             return;
         }
+        // Custom items use slots 25 and 26 for the two Verity discs.
+        // Handle these before the generic Next Page / Close buttons.
+        if(type.equals("customitems")){
+            if(!p.hasPermission("diddyblud.admin"))return;
+            if(slot==25){give(p,verityDisc.item());return;}
+            if(slot==26){give(p,lordVerityDisc.item());return;}
+        }
         if(slot==26){p.closeInventory();return;}
         if(slot==18){if(h.page==0)openShop(p,0,false);else openList(p,type,h.page-1);return;}
         if(slot==25){openList(p,type,h.page+1);return;}
