@@ -191,6 +191,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // their separate spawners.yml file.
         if(spawners!=null)spawners.save();
         if(arcade!=null)arcade.save();
+        if(verityDisc!=null)verityDisc.close();
         if(leaderboards!=null)leaderboards.close();
     }
     private void captureOpenVaults(){
