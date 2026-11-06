@@ -80,6 +80,18 @@ final class CommunityBridge implements Listener {
             players.add(player);
         }
         payload.add("players",players);
+        JsonObject leaderboards=new JsonObject();
+        for(String category:List.of("money","playtime","hearts")){
+            JsonArray results=new JsonArray();
+            for(Map<String,Object> entry:plugin.bridgeLeaderboard(category)){
+                JsonObject result=new JsonObject();
+                result.addProperty("name",String.valueOf(entry.get("name")));
+                result.addProperty("value",(Long)entry.get("value"));
+                results.add(result);
+            }
+            leaderboards.add(category,results);
+        }
+        payload.add("leaderboards",leaderboards);
         LevelSystem.JsonShop shop=plugin.bridgeLevelShop();
         if(shop!=null){
             JsonObject catalog=new JsonObject();
