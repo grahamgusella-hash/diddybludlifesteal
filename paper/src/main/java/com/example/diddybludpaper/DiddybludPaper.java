@@ -122,6 +122,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private LordVerityDisc lordVerityDisc;
     private DiddybludArcade arcade;
     private PlayerAuctionLog playerAuctionLog;
+    private CommunityBridge communityBridge;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
@@ -169,6 +170,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getScheduler().runTaskTimer(this,this::renderRankParticles,5L,5L);
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         refreshAllRanks();
+        communityBridge=new CommunityBridge(this);
+        communityBridge.start();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
     }
     // Phantoms are disabled in every world, including custom dimensions.
@@ -187,6 +190,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @Override public void onDisable(){
         // Snapshot vaults that are still open when the server stops. Bukkit may
         // not have fired InventoryCloseEvent for them yet.
+        if(communityBridge!=null)communityBridge.stop();
         captureOpenVaults();
         // Keep countdowns in shardSecondsRemaining for the last data write.
         // Persist world spawn, all shop categories/prices, accounts and vaults.
@@ -198,6 +202,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(verityDisc!=null)verityDisc.close();
         if(lordVerityDisc!=null)lordVerityDisc.close();
         if(leaderboards!=null)leaderboards.close();
+    }
+    // Expose read-only stats and validated rank writes to the bridge (main thread only).
+    long bridgeShards(UUID id){return shards.getOrDefault(id,0L);}
+    int bridgeHearts(Player player){return maxHearts(player);}
+    String bridgeRank(UUID id){return assignedRanks.getOrDefault(id,"");}
+    boolean bridgeGrantRank(Player target,String rank){
+        String id=rank.toLowerCase(Locale.ROOT);
+        if(!rankLabels.containsKey(id))return false;
+        assignedRanks.put(target.getUniqueId(),id);
+        save();refreshAllRanks();refreshRankEffects();return true;
     }
     private void captureOpenVaults(){
         for(Player player:getServer().getOnlinePlayers()){
