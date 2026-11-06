@@ -123,6 +123,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private DiddybludArcade arcade;
     private PlayerAuctionLog playerAuctionLog;
     private CommunityBridge communityBridge;
+    private LevelSystem levelSystem;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
     private record Listing(UUID seller,ItemStack stack,long price){}
@@ -170,6 +171,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         getServer().getScheduler().runTaskTimer(this,this::renderRankParticles,5L,5L);
         for(Player online:getServer().getOnlinePlayers())initializeSidebar(online);
         refreshAllRanks();
+        levelSystem=new LevelSystem(this);
         communityBridge=new CommunityBridge(this);
         communityBridge.start();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
@@ -191,6 +193,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Snapshot vaults that are still open when the server stops. Bukkit may
         // not have fired InventoryCloseEvent for them yet.
         if(communityBridge!=null)communityBridge.stop();
+        if(levelSystem!=null)levelSystem.save();
         captureOpenVaults();
         // Keep countdowns in shardSecondsRemaining for the last data write.
         // Persist world spawn, all shop categories/prices, accounts and vaults.
@@ -212,6 +215,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!rankLabels.containsKey(id))return false;
         assignedRanks.put(target.getUniqueId(),id);
         save();refreshAllRanks();refreshRankEffects();return true;
+    }
+    long bridgeLevelBalance(UUID id){return levelSystem==null?0:levelSystem.balance(id);}
+    LevelSystem.JsonShop bridgeLevelShop(){return levelSystem==null?null:levelSystem.catalog();}
+    void bridgeRedeemLevels(String name,String code,String offer){if(levelSystem!=null)levelSystem.redeem(name,code,offer);}
+    boolean bridgeRankExists(String id){return rankLabels.containsKey(id);}
+    boolean bridgeCanAddShards(UUID id,long amount){return amount>0&&shards.getOrDefault(id,0L)<=Long.MAX_VALUE-amount;}
+    boolean bridgeAddShards(UUID id,long amount){
+        if(!bridgeCanAddShards(id,amount))return false;
+        shards.put(id,shards.getOrDefault(id,0L)+amount);save();return true;
     }
     private void captureOpenVaults(){
         for(Player player:getServer().getOnlinePlayers()){
@@ -3033,6 +3045,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
+        if(cmd.equals("levels")||cmd.equals("level"))return levelSystem.command(sender,args);
         if(cmd.equals("veinminer")||cmd.equals("treefeller")){
             sender.sendMessage("§a"+(cmd.equals("veinminer")?"VeinMiner":"Tree Feller")+
                 " is active by default. §eHold Shift while breaking "+
