@@ -1,6 +1,10 @@
 package com.example.diddybludpaper;
 
 import org.bukkit.Bukkit;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -138,7 +142,12 @@ final class LevelSystem {
             for(int i=0;i<10;i++)b.append(ALPHABET.charAt((bytes[i]&255)%ALPHABET.length()));
             String code=b.toString();
             codes.put(id,new Code(code,System.currentTimeMillis()+5*60*1000));
-            player.sendMessage("§aWebsite level-shop code: §e"+code+" §7(expires in 5 minutes).");
+            Component clickableCode=Component.text(code,NamedTextColor.YELLOW)
+                .clickEvent(ClickEvent.copyToClipboard(code))
+                .hoverEvent(HoverEvent.showText(Component.text("Click to copy this website code",NamedTextColor.GREEN)));
+            player.sendMessage(Component.text("Website level-shop code: ",NamedTextColor.GREEN)
+                .append(clickableCode)
+                .append(Component.text(" (click to copy, expires in 5 minutes)",NamedTextColor.GRAY)));
             player.sendMessage("§7Never give this code to another player.");
             return true;
         }
