@@ -5,6 +5,10 @@ api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
 commands:
   diddyblud: {description: Plugin information}
+  levels:
+    description: Show levels, exchange money for levels, or generate a website purchase code
+    aliases: [level]
+    usage: /levels [buy <amount>|code]
   leaderboard:
     description: Place or remove a public top-10 hologram
     aliases: [leaderboards]
