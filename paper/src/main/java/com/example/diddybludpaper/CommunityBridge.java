@@ -74,6 +74,7 @@ final class CommunityBridge implements Listener {
             player.addProperty("name",p.getName());
             player.addProperty("money",plugin.funds(p.getUniqueId()));
             player.addProperty("shards",plugin.bridgeShards(p.getUniqueId()));
+            player.addProperty("playtime",plugin.bridgePlaytime(p.getUniqueId()));
             player.addProperty("hearts",plugin.bridgeHearts(p));
             player.addProperty("rank",plugin.bridgeRank(p.getUniqueId()));
             player.addProperty("levels",plugin.bridgeLevelBalance(p.getUniqueId()));
