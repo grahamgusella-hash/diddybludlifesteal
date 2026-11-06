@@ -139,6 +139,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         infiniteWaterKey=new NamespacedKey(this,"infinite_water_bucket");
         dataFile=new File(getDataFolder(),"server-data.yml");
         defaults();load();
+        // Built-in cosmetic ranks for the configurable website level shop.
+        // Never overwrite names customized by staff.
+        rankLabels.putIfAbsent("starter","&aStarter");
+        rankLabels.putIfAbsent("champion","&bChampion");
+        rankLabels.putIfAbsent("legend","&6Legend");
         moneyBills=new MoneyBills(this);
         sellAxe=new SellAxe(this);
         playerAuctionLog=new PlayerAuctionLog(this);
