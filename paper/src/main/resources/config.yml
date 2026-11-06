@@ -1,2 +1,12 @@
 # Paper plugin starter configuration. Balance data is saved in balances.yml.
 default-balance: 0
+
+# Discord / website Render connection.
+# NEVER commit your secret to GitHub. Set URL and secret in the private
+# plugins/DiddybludLifesteal/config.yml file on FalixNodes instead.
+community-bridge:
+  enabled: false
+  url: "https://diddybludsmpwebsite.onrender.com"
+  secret: ""
+  # Only enable after verifying identity, eligibility, and payments independently.
+  allow-staff-approved-ranks: false
