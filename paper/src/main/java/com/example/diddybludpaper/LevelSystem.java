@@ -144,6 +144,34 @@ final class LevelSystem {
         }
         player.sendMessage("§e/levels §7| §e/levels buy [amount] §7| §e/levels code");return true;
     }
+    /** OP-only command handlers; persisted in the server's private config.yml. */
+    boolean setMoneyPerLevel(long amount){
+        if(amount<=0||amount>1_000_000_000_000_000L)return false;
+        plugin.getConfig().set("leveling.money-per-level",amount);
+        plugin.saveConfig();
+        reload();
+        return true;
+    }
+    boolean makeRankBuyable(String rank,int cost){
+        if(!rank.matches("[a-z0-9_-]{1,24}")||cost<1||cost>1_000_000||!plugin.bridgeRankExists(rank))return false;
+        String key="leveling.offers."+rank;
+        plugin.getConfig().set(key+".name",plugin.bridgeRankName(rank)+" Rank");
+        plugin.getConfig().set(key+".type","rank");
+        plugin.getConfig().set(key+".value",rank);
+        plugin.getConfig().set(key+".cost",cost);
+        plugin.saveConfig();
+        reload();
+        return true;
+    }
+    boolean removeBuyableRank(String rank){
+        if(!rank.matches("[a-z0-9_-]{1,24}"))return false;
+        String key="leveling.offers."+rank;
+        if(!plugin.getConfig().getString(key+".type","").equalsIgnoreCase("rank"))return false;
+        plugin.getConfig().set(key,null);
+        plugin.saveConfig();
+        reload();
+        return true;
+    }
     /** Called from the primary server thread only. */
     void redeem(String name,String code,String offerId){
         Player target=Bukkit.getPlayerExact(name);
