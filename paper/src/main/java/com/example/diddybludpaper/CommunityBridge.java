@@ -27,6 +27,7 @@ final class CommunityBridge implements Listener {
     private final DiddybludPaper plugin;
     private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
     private final ConcurrentLinkedQueue<String> chat=new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<String> acknowledgments=new ConcurrentLinkedQueue<>();
     private final AtomicBoolean inFlight=new AtomicBoolean(false);
     private final String url,secret;
     private BukkitTask timer;
@@ -100,6 +101,10 @@ final class CommunityBridge implements Listener {
         List<String> batch=new ArrayList<>();
         for(int n=0;n<20;n++){String line=chat.poll();if(line==null)break;batch.add(line);sentChat.add(line);}
         payload.add("chat",sentChat);
+        JsonArray ackBatch=new JsonArray();
+        List<String> sentAcks=new ArrayList<>();
+        for(int n=0;n<60;n++){String id=acknowledgments.poll();if(id==null)break;sentAcks.add(id);ackBatch.add(id);}
+        payload.add("acks",ackBatch);
         Bukkit.getScheduler().runTaskAsynchronously(plugin,()->{
             try{
                 HttpRequest req=HttpRequest.newBuilder(URI.create(url+"/api/server/sync"))
@@ -115,6 +120,7 @@ final class CommunityBridge implements Listener {
             }catch(Exception ex){
                 // Restore unsent chat; no other Bukkit operations from this async thread.
                 for(String line:batch)if(chat.size()<150)chat.offer(line);
+                for(String id:sentAcks)acknowledgments.offer(id);
                 plugin.getLogger().warning("Community bridge sync failed: "+ex.getMessage());
             }finally{inFlight.set(false);}
         });
@@ -129,6 +135,8 @@ final class CommunityBridge implements Listener {
         for(JsonElement e:actions){
             if(!e.isJsonObject())continue;
             JsonObject cmd=e.getAsJsonObject();
+            String messageId=str(cmd,"id",36);
+            if(messageId.matches("[0-9a-f-]{36}"))acknowledgments.offer(messageId);
             String type=str(cmd,"type",30);
             switch(type){
                 case "chat" -> Bukkit.broadcastMessage("§7"+str(cmd,"text",250));
