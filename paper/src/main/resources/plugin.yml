@@ -5,6 +5,10 @@ api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
 commands:
   diddyblud: {description: Plugin information}
+  buyable:
+    description: Configure website buyable ranks and in-game money cost per level
+    permission: diddyblud.admin
+    usage: /buyable rank create <rank|all> <levelPrice> or /buyable levels price <moneyCost>
   levels:
     description: Show levels, exchange money for levels, or generate a website purchase code
     aliases: [level]
