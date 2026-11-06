@@ -221,6 +221,24 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         assignedRanks.put(target.getUniqueId(),id);
         save();refreshAllRanks();refreshRankEffects();return true;
     }
+    List<Map<String,Object>> bridgeLeaderboard(String category){
+        if(!Set.of("money","playtime","hearts").contains(category))return List.of();
+        Map<UUID,Long> scores=leaderboardScores(category);
+        List<Map.Entry<UUID,Long>> sorted=new ArrayList<>(scores.entrySet());
+        sorted.sort((a,b)->{
+            int compare=Long.compare(b.getValue(),a.getValue());
+            return compare!=0?compare:a.getKey().compareTo(b.getKey());
+        });
+        List<Map<String,Object>> result=new ArrayList<>();
+        for(var entry:sorted){
+            if(result.size()>=10)break;
+            OfflinePlayer player=Bukkit.getOfflinePlayer(entry.getKey());
+            String name=player.getName();
+            if(name==null||!name.matches("[A-Za-z0-9_]{3,16}"))continue;
+            result.add(Map.of("name",name,"value",entry.getValue()));
+        }
+        return result;
+    }
     long bridgeLevelBalance(UUID id){return levelSystem==null?0:levelSystem.balance(id);}
     LevelSystem.JsonShop bridgeLevelShop(){return levelSystem==null?null:levelSystem.catalog();}
     void bridgeRedeemLevels(String name,String code,String offer){if(levelSystem!=null)levelSystem.redeem(name,code,offer);}
