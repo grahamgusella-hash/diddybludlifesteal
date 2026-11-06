@@ -92,6 +92,14 @@ final class CommunityBridge implements Listener {
             leaderboards.add(category,results);
         }
         payload.add("leaderboards",leaderboards);
+        JsonArray applicationRoles=new JsonArray();
+        for(Map<String,String> role:plugin.bridgeApplicationRoles()){
+            JsonObject item=new JsonObject();
+            item.addProperty("id",role.get("id"));
+            item.addProperty("name",role.get("name"));
+            applicationRoles.add(item);
+        }
+        payload.add("applicationRoles",applicationRoles);
         LevelSystem.JsonShop shop=plugin.bridgeLevelShop();
         if(shop!=null){
             JsonObject catalog=new JsonObject();
