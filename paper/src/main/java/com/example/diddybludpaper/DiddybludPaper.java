@@ -242,6 +242,25 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     long bridgeLevelBalance(UUID id){return levelSystem==null?0:levelSystem.balance(id);}
     LevelSystem.JsonShop bridgeLevelShop(){return levelSystem==null?null:levelSystem.catalog();}
     void bridgeRedeemLevels(String name,String code,String offer){if(levelSystem!=null)levelSystem.redeem(name,code,offer);}
+    String bridgeRankName(String id){
+        return ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&',rankLabels.getOrDefault(id,id))).trim();
+    }
+    List<Map<String,String>> bridgeApplicationRoles(){
+        Set<String> ids=new LinkedHashSet<>();
+        for(String role:getConfig().getStringList("applications.roles")){
+            if(role.matches("[A-Za-z0-9 _-]{2,40}"))ids.add(role);
+        }
+        // Every custom Minecraft rank and permission group is also available to apply for.
+        ids.addAll(rankLabels.keySet());
+        ids.addAll(blockedGroupCommands.keySet());
+        List<Map<String,String>> result=new ArrayList<>();
+        for(String id:ids){
+            if(result.size()>=100)break;
+            if(id==null||!id.matches("[A-Za-z0-9 _-]{2,40}"))continue;
+            result.add(Map.of("id",id,"name",rankLabels.containsKey(id)?bridgeRankName(id):id));
+        }
+        return result;
+    }
     boolean bridgeRankExists(String id){return rankLabels.containsKey(id);}
     boolean bridgeCanAddShards(UUID id,long amount){return amount>0&&shards.getOrDefault(id,0L)<=Long.MAX_VALUE-amount;}
     boolean bridgeAddShards(UUID id,long amount){
@@ -2528,6 +2547,75 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 player.getLocation().add(0,1,0),5,0.35,0.65,0.35,0.01);
         }
     }
+    private boolean buyableCommand(CommandSender sender,String[] args){
+        if(!sender.hasPermission("diddyblud.admin")){
+            sender.sendMessage("§cOnly server admins can manage buyable ranks and level prices.");return true;
+        }
+        if(args.length==3&&args[0].equalsIgnoreCase("levels")&&args[1].equalsIgnoreCase("price")){
+            try{
+                long price=Long.parseLong(args[2]);
+                if(!levelSystem.setMoneyPerLevel(price)){
+                    sender.sendMessage("§cEnter a money price between 1 and 1,000,000,000,000,000.");return true;
+                }
+                sender.sendMessage("§aEach level now costs $"+price+" in-game. Website updates on the next sync.");
+            }catch(NumberFormatException e){sender.sendMessage("§cEnter a valid whole-number price.");}
+            return true;
+        }
+        if(args.length==4&&args[0].equalsIgnoreCase("rank")&&args[1].equalsIgnoreCase("create")){
+            String rank=args[2].toLowerCase(Locale.ROOT);
+            try{
+                int cost=Integer.parseInt(args[3]);
+                if(cost<1||cost>1_000_000){
+                    sender.sendMessage("§cLevel cost must be between 1 and 1,000,000.");return true;
+                }
+                if(rank.equals("all")){
+                    int changed=0;
+                    for(String id:rankLabels.keySet())if(levelSystem.makeRankBuyable(id,cost))changed++;
+                    sender.sendMessage("§aCreated/updated "+changed+" buyable rank listings, "+cost+" levels each.");
+                }else if(levelSystem.makeRankBuyable(rank,cost)){
+                    sender.sendMessage("§aRank "+rank+" is buyable for "+cost+" levels.");
+                }else sender.sendMessage("§cUnknown rank. Run /rank list or create a rank first.");
+            }catch(NumberFormatException e){sender.sendMessage("§cEnter a valid whole-number level cost.");}
+            return true;
+        }
+        if(args.length==3&&args[0].equalsIgnoreCase("rank")&&args[1].equalsIgnoreCase("remove")){
+            if(levelSystem.removeBuyableRank(args[2].toLowerCase(Locale.ROOT)))
+                sender.sendMessage("§aRemoved buyable rank "+args[2]+".");
+            else sender.sendMessage("§cThat rank is not a buyable listing.");
+            return true;
+        }
+        if(args.length==2&&args[0].equalsIgnoreCase("rank")&&args[1].equalsIgnoreCase("list")){
+            StringBuilder out=new StringBuilder("§eBuyable ranks: ");
+            for(var offer:levelSystem.catalog().offers()){
+                if(!"rank".equals(offer.get("type")))continue;
+                out.append(offer.get("id")).append(" (").append(offer.get("cost")).append(" levels), ");
+            }
+            sender.sendMessage(out.toString());return true;
+        }
+        sender.sendMessage("§e/buyable rank create <rank|all> <levelPrice>");
+        sender.sendMessage("§e/buyable rank remove <rank> | /buyable rank list");
+        sender.sendMessage("§e/buyable levels price <moneyCost>");
+        return true;
+    }
+    @Override public List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){
+        if(!command.getName().equalsIgnoreCase("buyable")||!sender.hasPermission("diddyblud.admin"))return List.of();
+        List<String> options=List.of();
+        if(args.length==1)options=List.of("rank","levels");
+        else if(args[0].equalsIgnoreCase("rank")){
+            if(args.length==2)options=List.of("create","remove","list");
+            else if(args.length==3&&(args[1].equalsIgnoreCase("create")||args[1].equalsIgnoreCase("remove"))){
+                List<String> ranks=new ArrayList<>(rankLabels.keySet());
+                if(args[1].equalsIgnoreCase("create"))ranks.add("all");
+                options=ranks;
+            }
+            else if(args.length==4&&args[1].equalsIgnoreCase("create"))options=List.of("10","25","50","100");
+        }else if(args[0].equalsIgnoreCase("levels")){
+            if(args.length==2)options=List.of("price");
+            else if(args.length==3)options=List.of("10000000");
+        }
+        String prefix=args[args.length-1].toLowerCase(Locale.ROOT);
+        return options.stream().filter(v->v.toLowerCase(Locale.ROOT).startsWith(prefix)).toList();
+    }
     private boolean rankCommand(CommandSender sender,String[] args){
         if(!sender.hasPermission("diddyblud.admin")){
             sender.sendMessage("§cOnly OPs can manage ranks.");return true;
@@ -3069,6 +3157,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @Override public boolean onCommand(CommandSender sender,Command command,String label,String[] args){
         String cmd=command.getName().toLowerCase(Locale.ROOT);
         if(cmd.equals("levels")||cmd.equals("level"))return levelSystem.command(sender,args);
+        if(cmd.equals("buyable"))return buyableCommand(sender,args);
         if(cmd.equals("veinminer")||cmd.equals("treefeller")){
             sender.sendMessage("§a"+(cmd.equals("veinminer")?"VeinMiner":"Tree Feller")+
                 " is active by default. §eHold Shift while breaking "+
