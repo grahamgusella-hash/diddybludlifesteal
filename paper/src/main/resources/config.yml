@@ -43,3 +43,15 @@ leveling:
       type: shards
       value: "100"
       cost: 3
+
+# Roles shown on the website application form (alongside all defined
+# Minecraft ranks and custom /perms groups). Applications require staff review.
+applications:
+  roles:
+    - Helper
+    - Moderator
+    - Builder
+    - Developer
+    - Administrator
+    - Content Creator
+    - Support
