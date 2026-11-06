@@ -1,4 +1,4 @@
-# Diddyblud Lifesteal — Level Shop (Paper 0.8.58)
+# Diddyblud Lifesteal — Level Shop (Paper 0.8.59)
 
 ## What it does
 - Every **30 minutes online** awards **1 spendable level** (configurable).
@@ -10,7 +10,7 @@
 
 ## Installation
 1. Download the latest successful **Build Paper plugin** artifact from the GitHub Actions page.
-2. Unzip the JAR, remove the previous DiddybludLifesteal JAR from FalixNodes `plugins/` and upload `DiddybludLifesteal-0.8.58-paper.jar`.
+2. Unzip the JAR, remove the previous DiddybludLifesteal JAR from FalixNodes `plugins/` and upload `DiddybludLifesteal-0.8.59-paper.jar`.
 3. Keep your previous `server-data.yml` and other plugin data; do not delete the plugin folder.
 4. In the **private server** `plugins/DiddybludLifesteal/config.yml`, add the **leveling** section from `paper/src/main/resources/config.yml` below. Existing config files are not automatically overwritten when updating the JAR.
 5. Keep `community-bridge.enabled: true` and the same private `community-bridge.secret` as `BRIDGE_SECRET` in Render. Do not commit or share it.
@@ -60,14 +60,16 @@ Edit these costs, add or remove offers, and restart Minecraft. For `rank` reward
 - `/buyable rank list`: show configured rank offers.
 - `/buyable levels price <moneyPrice>`: change the in-game dollar cost to exchange for one level using /levels buy.
 
-These commands are restricted to operators with `diddyblud.admin`, update the **private server config.yml**, and are reflected on the website after the next Minecraft sync (normally ten seconds).
+These commands are restricted to operators with `diddyblud.admin`, update the **private server config.yml**, and trigger an immediate Render sync. The website checks shop changes every ten seconds without a page reload.
+
+**Rank/reward purchases happen exclusively on the website**: players click the rank's Buy Rank button and submit their Minecraft username with a one-time `/levels code`. `/buyable` only configures the shop; it never lets players buy ranks in-game. `/levels buy` is solely the existing money-to-level exchange, not a rank purchase.
 
 ## Website stats and applications
 
 - Online-player stats: money, hearts, and level balance; refreshed about every 30 seconds. If the last sync is older than two minutes, the page marks Minecraft as disconnected instead of claiming the old list is current.
 - Leaderboards: top-ten money, playtime, and hearts, using the plugin's existing reset-aware leaderboard data, including offline players with known names.
 - Applications: the dropdown includes the built-in staff application roles from `applications.roles` in the server config, every custom `/rank` rank, and all groups created using the plugin's `/perms` system. An application only notifies staff through Discord; it never grants a role.
-- The Render backend must redeploy to support the application roles endpoint. The Paper server must run 0.8.58 or later to send the roles.
+- The Render backend must redeploy to support the application roles endpoint. The Paper server must run 0.8.59 or later to send the roles.
 
 ## Player commands
 - `/levels`: view spendable levels and rates
