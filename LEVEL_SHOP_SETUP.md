@@ -1,15 +1,16 @@
-# Diddyblud Lifesteal — Level Shop (Paper 0.8.56)
+# Diddyblud Lifesteal — Level Shop (Paper 0.8.57)
 
 ## What it does
 - Every **30 minutes online** awards **1 spendable level** (configurable).
 - Players can deliberately exchange **$10,000,000 in-game for 1 level** using `/levels buy` (configurable). Money is deducted when they use the command, not automatically.
-- Players spend levels on **rank labels** or **in-game money/shard rewards** on the website. This is **not a real-money payment system**.
+- Players spend levels on **rank labels** or **in-game money/shard rewards** on the website. After the one-time in-game verification code and level balance are validated, the Paper plugin **automatically grants ranks**, without staff approval. This is **not a real-money payment system**.
+- The website shows global top-ten **money, playtime, and hearts leaderboards**, including offline players. Leaderboards follow the game's existing /leaderboard reset baselines.
 - Player level balances and partial minutes are persisted to `plugins/DiddybludLifesteal/levels.yml`.
 - A one-time code generated **in Minecraft** protects website purchases from username impersonation. Code expires in **5 minutes** and must be used while online.
 
 ## Installation
 1. Download the latest successful **Build Paper plugin** artifact from the GitHub Actions page.
-2. Unzip the JAR, remove the previous DiddybludLifesteal JAR from FalixNodes `plugins/` and upload `DiddybludLifesteal-0.8.56-paper.jar`.
+2. Unzip the JAR, remove the previous DiddybludLifesteal JAR from FalixNodes `plugins/` and upload `DiddybludLifesteal-0.8.57-paper.jar`.
 3. Keep your previous `server-data.yml` and other plugin data; do not delete the plugin folder.
 4. In the **private server** `plugins/DiddybludLifesteal/config.yml`, add the **leveling** section from `paper/src/main/resources/config.yml` below. Existing config files are not automatically overwritten when updating the JAR.
 5. Keep `community-bridge.enabled: true` and the same private `community-bridge.secret` as `BRIDGE_SECRET` in Render. Do not commit or share it.
