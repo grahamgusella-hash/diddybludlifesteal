@@ -213,6 +213,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     // Expose read-only stats and validated rank writes to the bridge (main thread only).
     long bridgeShards(UUID id){return shards.getOrDefault(id,0L);}
+    long bridgePlaytime(UUID id){return leaderboardPlaytime.getOrDefault(id,0L);}
     int bridgeHearts(Player player){return maxHearts(player);}
     String bridgeRank(UUID id){return assignedRanks.getOrDefault(id,"");}
     boolean bridgeGrantRank(Player target,String rank){
