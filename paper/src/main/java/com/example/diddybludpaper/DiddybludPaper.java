@@ -2561,7 +2561,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 if(!levelSystem.setMoneyPerLevel(price)){
                     sender.sendMessage("§cEnter a money price between 1 and 1,000,000,000,000,000.");return true;
                 }
-                sender.sendMessage("§aEach level now costs $"+price+" in-game. Website updates on the next sync.");
+                sender.sendMessage("§aEach level now costs $"+price+" in-game. Website shop is being updated.");
+                if(communityBridge!=null)communityBridge.syncNow();
             }catch(NumberFormatException e){sender.sendMessage("§cEnter a valid whole-number price.");}
             return true;
         }
@@ -2575,16 +2576,19 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 if(rank.equals("all")){
                     int changed=0;
                     for(String id:rankLabels.keySet())if(levelSystem.makeRankBuyable(id,cost))changed++;
-                    sender.sendMessage("§aCreated/updated "+changed+" buyable rank listings, "+cost+" levels each.");
+                    sender.sendMessage("§aCreated/updated "+changed+" buyable rank listings, "+cost+" levels each. Purchase on the website.");
+                    if(communityBridge!=null)communityBridge.syncNow();
                 }else if(levelSystem.makeRankBuyable(rank,cost)){
-                    sender.sendMessage("§aRank "+rank+" is buyable for "+cost+" levels.");
+                    sender.sendMessage("§aRank "+rank+" is listed on the website for "+cost+" levels; players buy it there.");
+                    if(communityBridge!=null)communityBridge.syncNow();
                 }else sender.sendMessage("§cUnknown rank. Run /rank list or create a rank first.");
             }catch(NumberFormatException e){sender.sendMessage("§cEnter a valid whole-number level cost.");}
             return true;
         }
         if(args.length==3&&args[0].equalsIgnoreCase("rank")&&args[1].equalsIgnoreCase("remove")){
             if(levelSystem.removeBuyableRank(args[2].toLowerCase(Locale.ROOT)))
-                sender.sendMessage("§aRemoved buyable rank "+args[2]+".");
+                {sender.sendMessage("§aRemoved buyable rank "+args[2]+" from website.");
+                if(communityBridge!=null)communityBridge.syncNow();}
             else sender.sendMessage("§cThat rank is not a buyable listing.");
             return true;
         }
