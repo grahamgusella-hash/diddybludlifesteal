@@ -10,3 +10,36 @@ community-bridge:
   secret: ""
   # Only enable after verifying identity, eligibility, and payments independently.
   allow-staff-approved-ranks: false
+
+# Earn 1 level for each 30 minutes actually online.
+# /levels buy exchanges 10,000,000 in-game dollars for 1 level.
+# Website shop costs spend levels (not real money). Change these as needed.
+leveling:
+  playtime-minutes-per-level: 30
+  money-per-level: 10000000
+  offers:
+    starter:
+      name: Starter Rank
+      type: rank
+      value: starter
+      cost: 10
+    champion:
+      name: Champion Rank
+      type: rank
+      value: champion
+      cost: 30
+    legend:
+      name: Legend Rank
+      type: rank
+      value: legend
+      cost: 60
+    bonusmoney:
+      name: 500,000 in-game dollars
+      type: money
+      value: "500000"
+      cost: 2
+    bonusshards:
+      name: 100 Shards
+      type: shards
+      value: "100"
+      cost: 3
