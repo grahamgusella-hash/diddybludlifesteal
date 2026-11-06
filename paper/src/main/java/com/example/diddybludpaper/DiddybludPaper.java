@@ -247,7 +247,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     List<Map<String,String>> bridgeApplicationRoles(){
         Set<String> ids=new LinkedHashSet<>();
-        for(String role:getConfig().getStringList("applications.roles")){
+        // Existing server installations may have an older config.yml without this section.
+        List<String> configured=getConfig().getStringList("applications.roles");
+        if(configured.isEmpty())configured=List.of("Helper","Moderator","Builder","Developer","Administrator","Content Creator","Support");
+        for(String role:configured){
             if(role.matches("[A-Za-z0-9 _-]{2,40}"))ids.add(role);
         }
         // Every custom Minecraft rank and permission group is also available to apply for.
