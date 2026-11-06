@@ -75,9 +75,27 @@ final class CommunityBridge implements Listener {
             player.addProperty("shards",plugin.bridgeShards(p.getUniqueId()));
             player.addProperty("hearts",plugin.bridgeHearts(p));
             player.addProperty("rank",plugin.bridgeRank(p.getUniqueId()));
+            player.addProperty("levels",plugin.bridgeLevelBalance(p.getUniqueId()));
             players.add(player);
         }
         payload.add("players",players);
+        LevelSystem.JsonShop shop=plugin.bridgeLevelShop();
+        if(shop!=null){
+            JsonObject catalog=new JsonObject();
+            catalog.addProperty("playtimeMinutes",shop.playtimeMinutes());
+            catalog.addProperty("moneyPerLevel",shop.moneyPerLevel());
+            JsonArray offers=new JsonArray();
+            for(Map<String,Object> o:shop.offers()){
+                JsonObject item=new JsonObject();
+                item.addProperty("id",String.valueOf(o.get("id")));
+                item.addProperty("name",String.valueOf(o.get("name")));
+                item.addProperty("type",String.valueOf(o.get("type")));
+                item.addProperty("cost",(Integer)o.get("cost"));
+                offers.add(item);
+            }
+            catalog.add("offers",offers);
+            payload.add("levelShop",catalog);
+        }
         JsonArray sentChat=new JsonArray();
         List<String> batch=new ArrayList<>();
         for(int n=0;n<20;n++){String line=chat.poll();if(line==null)break;batch.add(line);sentChat.add(line);}
@@ -120,6 +138,11 @@ final class CommunityBridge implements Listener {
                     if(!name.matches("[A-Za-z0-9_]{3,16}"))break;
                     Player target=Bukkit.getPlayerExact(name);
                     if(target!=null)target.kickPlayer(str(cmd,"reason",100));
+                }
+                case "level_purchase" -> {
+                    String name=str(cmd,"player",16),code=str(cmd,"code",20),offer=str(cmd,"offer",32);
+                    if(name.matches("[A-Za-z0-9_]{3,16}")&&code.matches("[A-Z2-9]{10}")&&offer.matches("[a-z0-9_-]{1,32}"))
+                        plugin.bridgeRedeemLevels(name,code,offer);
                 }
                 case "rank" -> {
                     String name=str(cmd,"player",16),rank=str(cmd,"rank",40);
