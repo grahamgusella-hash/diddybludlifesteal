@@ -52,6 +52,8 @@ final class CommunityBridge implements Listener {
         plugin.getLogger().info("Community bridge enabled (sync every 10 seconds).");
     }
     void stop(){running=false;if(timer!=null)timer.cancel();}
+    // Run from the main thread after an admin changes the level shop.
+    void syncNow(){if(running && plugin.isEnabled())poll();}
 
     @EventHandler(ignoreCancelled=true)
     public void onChat(AsyncPlayerChatEvent event){
