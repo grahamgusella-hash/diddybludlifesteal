@@ -18,7 +18,6 @@ leveling:
   playtime-minutes-per-level: 30
   levels-per-playtime-interval: 50
   money-per-level: 1000000
-  rates-2026-updated: true
   offers:
     starter:
       name: Starter Rank
