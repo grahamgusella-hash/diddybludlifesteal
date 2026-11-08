@@ -20,7 +20,7 @@ import java.util.*;
 
 /**
  * Spendable, server-side levels. Money conversion is an explicit purchase (/levels buy),
- * not an automatic debit. Online playtime awards one level per configured interval.
+ * not an automatic debit. Online playtime awards a configurable number of levels per interval.
  * Website redemptions require a short-lived code generated inside Minecraft.
  */
 final class LevelSystem {
@@ -34,19 +34,32 @@ final class LevelSystem {
     private record Offer(String name,String type,String value,int cost){}
     private final Map<String,Offer> offers=new LinkedHashMap<>();
     private int minutesPerLevel;
+    private int levelsPerInterval;
     private long dollarsPerLevel;
 
     LevelSystem(DiddybludPaper plugin){
         this.plugin=plugin;
         file=new File(plugin.getDataFolder(),"levels.yml");
+        migrateOldDefaults();
         reload();
         load();
         Bukkit.getScheduler().runTaskTimer(plugin,this::tick,1200L,1200L);
         Bukkit.getScheduler().runTaskTimer(plugin,this::save,6000L,6000L);
     }
+    private void migrateOldDefaults(){
+        // Existing installations keep their old config.yml on plugin updates.
+        // Update the previous shipped defaults once, preserving customized rates.
+        if(plugin.getConfig().getBoolean("leveling.rates-2026-updated",false))return;
+        if(plugin.getConfig().getLong("leveling.money-per-level",10_000_000L)==10_000_000L)
+            plugin.getConfig().set("leveling.money-per-level",1_000_000L);
+        plugin.getConfig().set("leveling.levels-per-playtime-interval",50);
+        plugin.getConfig().set("leveling.rates-2026-updated",true);
+        plugin.saveConfig();
+    }
     void reload(){
         minutesPerLevel=Math.max(1,plugin.getConfig().getInt("leveling.playtime-minutes-per-level",30));
-        dollarsPerLevel=Math.max(1L,plugin.getConfig().getLong("leveling.money-per-level",10000000L));
+        levelsPerInterval=Math.max(1,Math.min(10000,plugin.getConfig().getInt("leveling.levels-per-playtime-interval",50)));
+        dollarsPerLevel=Math.max(1L,plugin.getConfig().getLong("leveling.money-per-level",1000000L));
         offers.clear();
         ConfigurationSection section=plugin.getConfig().getConfigurationSection("leveling.offers");
         if(section!=null)for(String id:section.getKeys(false)){
@@ -92,11 +105,11 @@ final class LevelSystem {
             UUID id=p.getUniqueId();
             long next=seconds.getOrDefault(id,0L)+60L;
             if(next>=threshold){
-                long earned=next/threshold;
+                long earned=(next/threshold)*levelsPerInterval;
                 next%=threshold;
                 long prior=levels.getOrDefault(id,0L);
                 levels.put(id,Math.min(1000000000L,prior+earned));
-                p.sendMessage("§a+1 level from playtime! §e/levels §7to see your balance.");
+                p.sendMessage("§a+"+earned+" levels from playtime! §e/levels §7to see your balance.");
             }
             seconds.put(id,next);
         }
@@ -109,14 +122,14 @@ final class LevelSystem {
             Offer offer=item.getValue();
             entries.add(Map.of("id",item.getKey(),"name",offer.name(),"type",offer.type(),"cost",offer.cost()));
         }
-        return new JsonShop(entries,minutesPerLevel,dollarsPerLevel);
+        return new JsonShop(entries,minutesPerLevel,dollarsPerLevel,levelsPerInterval);
     }
-    record JsonShop(List<Map<String,Object>> offers,int playtimeMinutes,long moneyPerLevel){}
+    record JsonShop(List<Map<String,Object>> offers,int playtimeMinutes,long moneyPerLevel,int levelsPerInterval){}
     boolean command(CommandSender sender,String[] args){
         if(!(sender instanceof Player player)){sender.sendMessage("Use /levels in-game.");return true;}
         UUID id=player.getUniqueId();
         if(args.length==0){
-            player.sendMessage("§dLevels: §f"+balance(id)+" §7| Playtime: "+minutesPerLevel+" minutes/level");
+            player.sendMessage("§dLevels: §f"+balance(id)+" §7| Playtime: +"+levelsPerInterval+" levels every "+minutesPerLevel+" minutes");
             player.sendMessage("§7Money conversion: $"+dollarsPerLevel+" for 1 level using §e/levels buy [amount]");
             player.sendMessage("§7Website purchase code: §e/levels code");
             return true;
