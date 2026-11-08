@@ -107,6 +107,7 @@ final class CommunityBridge implements Listener {
         if(shop!=null){
             JsonObject catalog=new JsonObject();
             catalog.addProperty("playtimeMinutes",shop.playtimeMinutes());
+            catalog.addProperty("levelsPerInterval",shop.levelsPerInterval());
             catalog.addProperty("moneyPerLevel",shop.moneyPerLevel());
             JsonArray offers=new JsonArray();
             for(Map<String,Object> o:shop.offers()){
