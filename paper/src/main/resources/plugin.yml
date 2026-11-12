@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.62-paper
+version: 0.8.63-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -22,10 +22,14 @@ commands:
     description: Open rank-based and public kit menus
     aliases: [kit]
   echest:
-    description: Open your Ender Chest, or another online player's as an admin
+    description: Open your Ender Chest or another player's, including offline (OP only)
   invsee:
-    description: View and edit an online player's inventory
+    description: View and edit an online or offline player's inventory
     permission: diddyblud.admin
+  echestsee:
+    description: View and edit another player's Ender Chest online or offline
+    permission: diddyblud.admin
+    usage: /echestsee <player>
   unwipe:
     description: Restore the last recoverable wipe backup for a player
     permission: diddyblud.admin
