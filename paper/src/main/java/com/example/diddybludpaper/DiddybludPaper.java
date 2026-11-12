@@ -77,6 +77,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<UUID,UUID> requests=new HashMap<>();
     private final Map<String,ItemStack[]> vaults=new HashMap<>();
     private final Map<UUID,UUID> viewedInventories=new HashMap<>();
+    private final Map<UUID,OfflineEdit> offlineEditors=new HashMap<>();
+    private final Map<UUID,UUID> offlineEditLocks=new HashMap<>();
+    private record OfflineEdit(UUID targetId,boolean ender,OfflineInventoryData.Snapshot snapshot){}
+    private OfflineInventoryData offlineInventoryData;
     // Command-specific player restrictions, including commands owned by other plugins.
     private final Map<UUID,Set<String>> blockedPlayerCommands=new HashMap<>();
     private final Map<String,Set<String>> blockedGroupCommands=new TreeMap<>();
@@ -138,6 +142,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         infiniteRocketKey=new NamespacedKey(this,"infinite_rocket");
         infiniteWaterKey=new NamespacedKey(this,"infinite_water_bucket");
         dataFile=new File(getDataFolder(),"server-data.yml");
+        offlineInventoryData=new OfflineInventoryData(this);
         defaults();load();
         // Built-in cosmetic ranks for the configurable website level shop.
         // Never overwrite names customized by staff.
@@ -1693,6 +1698,66 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(26,icon(Material.BARRIER,"§cClose"));
         admin.openInventory(inv);
     }
+    private void openOfflineInventory(Player viewer,OfflinePlayer target,boolean ender){
+        UUID targetId=target.getUniqueId();
+        if(offlineEditLocks.containsKey(targetId)){
+            viewer.sendMessage("§cThat player's inventory is already being edited.");return;
+        }
+        if(target.isOnline()){
+            viewer.sendMessage("§cPlayer logged in. Use the online inventory instead.");return;
+        }
+        OfflineInventoryData.Snapshot loaded;
+        try{loaded=offlineInventoryData.load(target,ender);}
+        catch(Exception error){
+            viewer.sendMessage("§cCould not load offline player data: "+error.getMessage());
+            getLogger().warning("Offline inventory read failed: "+error);
+            return;
+        }
+        String display=target.getName()==null?"Unknown":target.getName();
+        Inventory inv=Bukkit.createInventory(
+            new MenuHolder(ender?"offlineechest":"offlineinvsee",0,viewer.getUniqueId()),
+            ender?27:54,
+            "§6Offline "+(ender?"Ender Chest: ":"Inventory: ")+
+                display.substring(0,Math.min(12,display.length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        for(int i=0;i<loaded.items.length;i++)
+            if(loaded.items[i]!=null)inv.setItem(i,loaded.items[i].clone());
+        if(!ender){
+            inv.setItem(45,icon(Material.PAPER,"§7Slots 0–35: inventory / hotbar"));
+            inv.setItem(46,icon(Material.IRON_CHESTPLATE,"§7Slots 36–39: armor"));
+            inv.setItem(47,icon(Material.SHIELD,"§7Slot 40: offhand"));
+            inv.setItem(53,icon(Material.BARRIER,"§cClose and save"));
+        }
+        offlineEditLocks.put(targetId,viewer.getUniqueId());
+        offlineEditors.put(viewer.getUniqueId(),new OfflineEdit(targetId,ender,loaded));
+        viewer.openInventory(inv);
+        viewer.sendMessage("§eEditing "+display+"'s offline "+
+            (ender?"Ender Chest.":"inventory.")+" §7Close to save.");
+    }
+    private void finishOfflineEdit(Player viewer,Inventory inv){
+        OfflineEdit edit=offlineEditors.remove(viewer.getUniqueId());
+        if(edit==null)return;
+        offlineEditLocks.remove(edit.targetId(),viewer.getUniqueId());
+        OfflinePlayer target=Bukkit.getOfflinePlayer(edit.targetId());
+        if(target.isOnline()){
+            viewer.sendMessage("§cPlayer logged in. Offline edits were NOT saved.");
+            return;
+        }
+        try{
+            int count=edit.ender()?27:41;
+            ItemStack[] items=new ItemStack[count];
+            for(int i=0;i<count;i++){
+                ItemStack stack=inv.getItem(i);
+                items[i]=stack==null?null:stack.clone();
+            }
+            offlineInventoryData.save(target,edit.ender(),edit.snapshot(),items);
+            viewer.sendMessage("§aSaved changes to "+(target.getName()==null?
+                "offline player":target.getName())+"'s "+(edit.ender()?"Ender Chest.":"inventory."));
+        }catch(Exception error){
+            viewer.sendMessage("§cOffline changes NOT saved: "+error.getMessage());
+            getLogger().warning("Offline inventory save failed for "+edit.targetId()+": "+error);
+        }
+    }
     private void openInventorySee(Player viewer,Player target){
         for(var entry:viewedInventories.entrySet()){
             if(entry.getValue().equals(target.getUniqueId())&&!entry.getKey().equals(viewer.getUniqueId())){
@@ -1787,6 +1852,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
+        if(type.equals("offlineinvsee")||type.equals("offlineechest")){
+            if(!p.isOp()||!offlineEditors.containsKey(p.getUniqueId())){
+                e.setCancelled(true);p.closeInventory();return;
+            }
+            if(type.equals("offlineinvsee")&&
+                ((slot>=41&&slot<54)||slot==53)){
+                e.setCancelled(true);
+                if(slot==53)p.closeInventory();
+            }
+            return;
+        }
         if(type.startsWith("adminhomes:")){
             e.setCancelled(true);
             if(!p.isOp()){p.closeInventory();return;}
@@ -2435,6 +2511,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void close(InventoryCloseEvent e){
         if(!(e.getPlayer() instanceof Player p))return;
         if(!(e.getInventory().getHolder() instanceof MenuHolder h))return;
+        if(h.kind.equals("offlineinvsee")||h.kind.equals("offlineechest")){
+            finishOfflineEdit(p,e.getInventory());
+            return;
+        }
         if(h.kind.equals("invsee")){
             syncInventorySee(p,e.getInventory());
             viewedInventories.remove(p.getUniqueId());
@@ -2662,6 +2742,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         return true;
     }
     @Override public List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){
+        if((command.getName().equalsIgnoreCase("invsee")||
+            command.getName().equalsIgnoreCase("echestsee")||
+            command.getName().equalsIgnoreCase("echest"))&&args.length==1&&sender.isOp()){
+            String prefix=args[0].toLowerCase(Locale.ROOT);
+            return java.util.stream.Stream.concat(
+                Bukkit.getOnlinePlayers().stream().map(p->(OfflinePlayer)p),
+                Arrays.stream(Bukkit.getOfflinePlayers()))
+                .map(OfflinePlayer::getName).filter(Objects::nonNull).distinct()
+                .filter(name->name.toLowerCase(Locale.ROOT).startsWith(prefix)).toList();
+        }
         if(command.getName().equalsIgnoreCase("homes")){
             if(!sender.isOp()||args.length!=1)return List.of();
             String prefix=args[0].toLowerCase(Locale.ROOT);
@@ -2923,6 +3013,16 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     @EventHandler public void onJoin(PlayerJoinEvent event){
         Player player=event.getPlayer();
+        // Never write an offline snapshot after Minecraft loads the live player.
+        UUID editorId=offlineEditLocks.remove(player.getUniqueId());
+        if(editorId!=null){
+            offlineEditors.remove(editorId);
+            Player viewer=Bukkit.getPlayer(editorId);
+            if(viewer!=null){
+                viewer.closeInventory();
+                viewer.sendMessage("§c"+player.getName()+" joined. Offline edits cancelled.");
+            }
+        }
         if(pendingInventoryWipes.contains(player.getUniqueId())){
             backupWipe(player.getUniqueId(),player);
             clearWipedInventory(player);
@@ -2960,6 +3060,13 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onDrag(InventoryDragEvent e){
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.startsWith("vault:"))return;
+        if(h.kind.equals("offlineinvsee")){
+            for(int slot:e.getRawSlots())if(slot>=41&&slot<54){
+                e.setCancelled(true);return;
+            }
+            return;
+        }
+        if(h.kind.equals("offlineechest"))return;
         if(h.kind.startsWith("adminhomes:")){e.setCancelled(true);return;}
         if(h.kind.equals("permsplayers")||h.kind.equals("permsgroups")||
             h.kind.startsWith("permscommands:")||h.kind.startsWith("permsgroupcmd:")||
@@ -3238,17 +3345,37 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 " §7Admins can restrict this ability via /perms.");
             return true;
         }
+        if(cmd.equals("echestsee")){
+            if(!(sender instanceof Player player)){
+                sender.sendMessage("§cUse this command in-game.");return true;
+            }
+            if(!player.isOp()){
+                player.sendMessage("§cOnly OPs can use /echestsee.");return true;
+            }
+            if(args.length!=1){player.sendMessage("§eUsage: /echestsee <player>");return true;}
+            OfflinePlayer target=knownPlayer(args[0]);
+            if(target==null){player.sendMessage("§cUnknown player.");return true;}
+            if(target.isOnline()){
+                Player online=Bukkit.getPlayer(target.getUniqueId());
+                if(online!=null)player.openInventory(online.getEnderChest());
+            }else openOfflineInventory(player,target,true);
+            return true;
+        }
         if(cmd.equals("echest")){
             if(!(sender instanceof Player player)){
                 sender.sendMessage("§cUse this command in-game.");return true;
             }
             if(args.length==0){player.openInventory(player.getEnderChest());return true;}
             if(args.length==1&&player.hasPermission("diddyblud.admin")){
-                Player target=Bukkit.getPlayerExact(args[0]);
-                if(target==null){player.sendMessage("§cPlayer must be online.");return true;}
-                player.openInventory(target.getEnderChest());return true;
+                OfflinePlayer target=knownPlayer(args[0]);
+                if(target==null){player.sendMessage("§cUnknown player.");return true;}
+                if(target.isOnline()){
+                    Player online=Bukkit.getPlayer(target.getUniqueId());
+                    if(online!=null)player.openInventory(online.getEnderChest());
+                }else openOfflineInventory(player,target,true);
+                return true;
             }
-            player.sendMessage("§eUsage: /echest [online player (OP only)]");return true;
+            player.sendMessage("§eUsage: /echest [player (OP only)]");return true;
         }
         if(cmd.equals("invsee")){
             if(!(sender instanceof Player player)){
@@ -3258,11 +3385,15 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 player.sendMessage("§cOnly OPs can use /invsee.");return true;
             }
             if(args.length!=1){player.sendMessage("§eUsage: /invsee <player>");return true;}
-            Player target=Bukkit.getPlayerExact(args[0]);
-            if(target==null||target.equals(player)){
-                player.sendMessage("§cChoose another online player.");return true;
+            OfflinePlayer target=knownPlayer(args[0]);
+            if(target==null||target.getUniqueId().equals(player.getUniqueId())){
+                player.sendMessage("§cChoose another known player.");return true;
             }
-            openInventorySee(player,target);return true;
+            if(target.isOnline()){
+                Player online=Bukkit.getPlayer(target.getUniqueId());
+                if(online!=null)openInventorySee(player,online);
+            }else openOfflineInventory(player,target,false);
+            return true;
         }
         if(cmd.equals("perms")){
             if(!(sender instanceof Player player)){
