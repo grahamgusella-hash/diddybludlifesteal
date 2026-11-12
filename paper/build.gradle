@@ -12,6 +12,7 @@ repositories {
 
 dependencies {
     compileOnly 'io.papermc.paper:paper-api:26.3.build.+'
+    implementation 'net.kyori:adventure-nbt:4.26.1'
 }
 
 java {
@@ -21,4 +22,16 @@ java {
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
     options.encoding = 'UTF-8'
+}
+
+// Bundle the Adventure NBT parser needed for offline playerdata without a
+// separate server-side dependency. Paper already supplies the Adventure API.
+tasks.named('jar', Jar) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        configurations.runtimeClasspath.collect { dependency ->
+            dependency.isDirectory() ? dependency : zipTree(dependency)
+        }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
 }
