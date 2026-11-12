@@ -1660,6 +1660,39 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         return !blockedPlayerCommands.getOrDefault(id,Set.of()).contains(commandId)
             && (group==null||!blockedGroupCommands.getOrDefault(group,Set.of()).contains(commandId));
     }
+    // OP-only read-only menu of another player's stored home locations.
+    // Uses the same UUID-keyed map as /sethome, including offline players.
+    private void openAdminHomes(Player admin,OfflinePlayer target){
+        Map<String,Location> saved=homes.get(target.getUniqueId());
+        if(saved==null||saved.isEmpty()){
+            admin.sendMessage("§e"+target.getName()+" has no saved homes.");return;
+        }
+        String name=target.getName()==null?"Unknown":target.getName();
+        String kind="adminhomes:"+target.getUniqueId();
+        Inventory inv=Bukkit.createInventory(new MenuHolder(kind,0,admin.getUniqueId()),
+            27,"§6Homes: "+name.substring(0,Math.min(16,name.length())));
+        ((MenuHolder)inv.getHolder()).inv=inv;
+        int i=0;
+        for(var entry:saved.entrySet()){
+            if(i>=18)break;
+            Location loc=entry.getValue();
+            Material material=loc.getWorld()==null?Material.BARRIER:
+                loc.getWorld().getEnvironment()==World.Environment.NETHER?Material.NETHERRACK:
+                loc.getWorld().getEnvironment()==World.Environment.THE_END?Material.END_STONE:
+                Material.GRASS_BLOCK;
+            ItemStack item=icon(material,"§a"+entry.getKey());
+            ItemMeta meta=item.getItemMeta();
+            meta.setLore(List.of(
+                "§7World: §f"+(loc.getWorld()==null?"Unavailable":loc.getWorld().getName()),
+                "§7X: §f"+loc.getBlockX()+" §7Y: §f"+loc.getBlockY()+
+                    " §7Z: §f"+loc.getBlockZ(),
+                "§eClick to teleport"));
+            item.setItemMeta(meta);
+            inv.setItem(i++,item);
+        }
+        inv.setItem(26,icon(Material.BARRIER,"§cClose"));
+        admin.openInventory(inv);
+    }
     private void openInventorySee(Player viewer,Player target){
         for(var entry:viewedInventories.entrySet()){
             if(entry.getValue().equals(target.getUniqueId())&&!entry.getKey().equals(viewer.getUniqueId())){
@@ -1754,6 +1787,29 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(!h.owner.equals(p.getUniqueId())){e.setCancelled(true);return;}
         int slot=e.getRawSlot();String type=h.kind;
+        if(type.startsWith("adminhomes:")){
+            e.setCancelled(true);
+            if(!p.isOp()){p.closeInventory();return;}
+            if(slot==26){p.closeInventory();return;}
+            if(slot<0||slot>=18)return;
+            UUID targetId;
+            try{targetId=UUID.fromString(type.substring("adminhomes:".length()));}
+            catch(IllegalArgumentException invalid){p.closeInventory();return;}
+            Map<String,Location> saved=homes.get(targetId);
+            if(saved==null||slot>=saved.size()){
+                p.sendMessage("§cThat home no longer exists.");p.closeInventory();return;
+            }
+            var entry=new ArrayList<>(saved.entrySet()).get(slot);
+            Location location=entry.getValue();
+            if(location==null||location.getWorld()==null){
+                p.sendMessage("§cThat home's world is unavailable.");return;
+            }
+            p.closeInventory();
+            if(p.teleport(location.clone()))
+                p.sendMessage("§aTeleported to §e"+entry.getKey()+"§a.");
+            else p.sendMessage("§cUnable to teleport to that home.");
+            return;
+        }
         if(type.equals("permsplayers")||type.equals("permsgroups")||
             type.startsWith("permscommands:")||type.startsWith("permsgroupcmd:")||
             type.startsWith("permsmembers:")||type.startsWith("permsplugins|")){
@@ -2606,6 +2662,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         return true;
     }
     @Override public List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){
+        if(command.getName().equalsIgnoreCase("homes")){
+            if(!sender.isOp()||args.length!=1)return List.of();
+            String prefix=args[0].toLowerCase(Locale.ROOT);
+            return java.util.stream.Stream.concat(Bukkit.getOnlinePlayers().stream().map(p->(OfflinePlayer)p),Arrays.stream(Bukkit.getOfflinePlayers())).map(OfflinePlayer::getName)
+                .filter(Objects::nonNull)
+                .filter(name->name.toLowerCase(Locale.ROOT).startsWith(prefix))
+                .toList();
+        }
         if(!command.getName().equalsIgnoreCase("buyable")||!sender.hasPermission("diddyblud.admin"))return List.of();
         List<String> options=List.of();
         if(args.length==1)options=List.of("rank","levels");
@@ -2896,6 +2960,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler public void onDrag(InventoryDragEvent e){
         if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder h))return;
         if(h.kind.startsWith("vault:"))return;
+        if(h.kind.startsWith("adminhomes:")){e.setCancelled(true);return;}
         if(h.kind.equals("permsplayers")||h.kind.equals("permsgroups")||
             h.kind.startsWith("permscommands:")||h.kind.startsWith("permsgroupcmd:")||
             h.kind.startsWith("permsmembers:")||
@@ -3534,6 +3599,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     return true;
                 }
                 case "homes" ->{
+                    if(args.length>0){
+                        if(!p.isOp()){p.sendMessage("§cOnly OPs can view other players' homes.");return true;}
+                        if(args.length!=1){p.sendMessage("§eUsage: /homes <player>");return true;}
+                        OfflinePlayer target=knownPlayer(args[0]);
+                        if(target==null){p.sendMessage("§cUnknown player. They must have joined before.");return true;}
+                        openAdminHomes(p,target);
+                        return true;
+                    }
                     Map<String,Location> saved=homes.get(uid);
                     p.sendMessage(saved==null||saved.isEmpty()?
                         "You have no saved homes. Use /sethome <name>.":
