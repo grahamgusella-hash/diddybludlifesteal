@@ -1,5 +1,5 @@
 name: DiddybludLifesteal
-version: 0.8.61-paper
+version: 0.8.62-paper
 main: com.example.diddybludpaper.DiddybludPaper
 api-version: '26.3'
 description: Server-side Lifesteal SMP for Paper 26.3
@@ -90,7 +90,9 @@ commands:
   home: {description: Visit a named home}
   sidebar: {description: Restore your money and shards HUD}
   scoreboard: {description: Restore your money and shards HUD}
-  homes: {description: List your saved homes}
+  homes:
+    description: List your saved homes, or view and teleport to another player's homes (OP only)
+    usage: /homes [player]
   tpa: {description: Teleport request}
   tpaccept: {description: Accept teleport request}
   tpdeny: {description: Deny teleport request}
