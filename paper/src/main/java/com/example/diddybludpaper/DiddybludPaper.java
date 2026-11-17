@@ -48,7 +48,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private final Map<String,Map<String,Integer>> rankPotionEffects=new HashMap<>();
     private final Map<String,String> rankParticleEffects=new HashMap<>();
     private final Map<UUID,Map<String,Integer>> previouslyAppliedRankPotions=new HashMap<>();
-    private record KitDefinition(String rank,ItemStack[] slots,Material icon){}
+    private record KitDefinition(String rank,ItemStack[] slots,Material icon,long cooldown){}
+    private final Map<UUID,Map<String,Long>> kitClaims=new HashMap<>();
+    private final Map<UUID,Long> editingKitCooldowns=new HashMap<>();
+    private final Set<UUID> awaitingKitCooldown=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Map<String,KitDefinition> kits=new LinkedHashMap<>();
     private final Map<UUID,String> newKitNames=new HashMap<>();
     private final Map<UUID,String> newKitRanks=new HashMap<>();
@@ -429,7 +432,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 if(items.get(i) instanceof ItemStack item)slots[i]=item.clone();
             Material picture=Material.matchMaterial(y.getString(base+"icon","CHEST"));
             if(picture==null||!picture.isItem())picture=Material.CHEST;
-            kits.put(name,new KitDefinition(required,slots,picture));
+            kits.put(name,new KitDefinition(required,slots,picture,Math.max(0,Math.min(31536000L,y.getLong(base+"cooldown-seconds",0)))));
+        }
+        ConfigurationSection claims=y.getConfigurationSection("kit-claims");
+        if(claims!=null)for(String raw:claims.getKeys(false)){
+            try{
+                UUID id=UUID.fromString(raw);
+                ConfigurationSection personal=claims.getConfigurationSection(raw);
+                if(personal!=null)for(String name:personal.getKeys(false))
+                    if(kits.containsKey(name))
+                        kitClaims.computeIfAbsent(id,k->new HashMap<>()).put(name,personal.getLong(name));
+            }catch(IllegalArgumentException ignored){}
         }
         ConfigurationSection definedRanks=y.getConfigurationSection("rank-labels");
         if(definedRanks!=null)for(String key:definedRanks.getKeys(false))
@@ -577,8 +590,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         kits.forEach((name,kit)->{
             y.set("kits."+name+".rank",kit.rank());
             y.set("kits."+name+".icon",kit.icon().name());
+            y.set("kits."+name+".cooldown-seconds",kit.cooldown());
             y.set("kits."+name+".slots",Arrays.asList(cloneItems(kit.slots())));
         });
+        kitClaims.forEach((id,claims)->claims.forEach((name,time)->y.set("kit-claims."+id+"."+name,time)));
         rankLabels.forEach((k,v)->y.set("rank-labels."+k,v));
         assignedRanks.forEach((k,v)->y.set("assigned-ranks."+k,v));
         rankPotionEffects.forEach((rank,effects)->effects.forEach((effect,level)->
@@ -1054,6 +1069,32 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             inv.setItem(slot,decoration);
         }
     }
+    private long kitRemaining(UUID id,String name,KitDefinition kit){
+        Long last=kitClaims.getOrDefault(id,Map.of()).get(name);
+        if(last==null||kit.cooldown()==0)return 0;
+        return Math.max(0,kit.cooldown()-Math.max(0,(System.currentTimeMillis()-last)/1000));
+    }
+    private String kitDuration(long seconds){
+        if(seconds<=0)return "None";
+        StringBuilder out=new StringBuilder();
+        long[] sizes={86400,3600,60,1};
+        String[] units={"d","h","m","s"};
+        for(int i=0;i<sizes.length;i++){
+            long count=seconds/sizes[i];seconds%=sizes[i];
+            if(count>0){if(out.length()>0)out.append(" ");out.append(count).append(units[i]);}
+        }
+        return out.toString();
+    }
+    private long parseKitCooldown(String input){
+        String value=input.trim().toLowerCase(Locale.ROOT);
+        if(value.equals("0")||value.equals("none"))return 0;
+        if(!value.matches("[0-9]+[smhd]?"))throw new IllegalArgumentException();
+        char last=value.charAt(value.length()-1);
+        long multiplier=switch(last){case 'm'->60;case 'h'->3600;case 'd'->86400;default->1;};
+        long amount=Long.parseLong(Character.isLetter(last)?value.substring(0,value.length()-1):value);
+        if(amount>31536000L/multiplier)throw new IllegalArgumentException();
+        return amount*multiplier;
+    }
     private void openKits(Player player,int page){
         Inventory inv=Bukkit.createInventory(new MenuHolder("kits",page,player.getUniqueId()),54,"§6§lKits");
         ((MenuHolder)inv.getHolder()).inv=inv;
@@ -1065,8 +1106,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             ItemMeta meta=icon.getItemMeta();
             boolean available=kit.rank().equals("everyone")||
                 kit.rank().equals(assignedRanks.get(player.getUniqueId()));
+            long remaining=kitRemaining(player.getUniqueId(),name,kit);
             meta.setLore(List.of("§7Rank: §f"+kit.rank(),
-                available?"§aClick to claim":"§cRequires rank "+kit.rank(),
+                "§7Cooldown: §f"+kitDuration(kit.cooldown()),
+                !available?"§cRequires rank "+kit.rank():remaining>0?
+                    "§cAvailable in "+kitDuration(remaining):"§aClick to claim",
                 player.hasPermission("diddyblud.admin")?"§eShift-left: edit | Shift-right: delete":"§7"));
             icon.setItemMeta(meta);
             inv.setItem(i,icon);
@@ -1128,6 +1172,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         editingKitOriginalNames.put(uuid,kits.containsKey(kitName)?kitName:null);
         newKitRanks.put(uuid,rank);
         editingKitIcons.put(uuid,kits.containsKey(kitName)?kits.get(kitName).icon():Material.CHEST);
+        editingKitCooldowns.put(uuid,kits.containsKey(kitName)?kits.get(kitName).cooldown():0L);
         showKitEditor(player);
     }
     private void showKitEditor(Player player){
@@ -1145,6 +1190,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         inv.setItem(46,icon(editingKitIcons.getOrDefault(uuid,Material.CHEST),
             "§eChoose Kit Picture (click holding an item)"));
         inv.setItem(47,icon(Material.NAME_TAG,"§eRename Kit: "+kitName));
+        ItemStack cooldown=icon(Material.CLOCK,"§eCooldown: "+kitDuration(editingKitCooldowns.getOrDefault(uuid,0L)));
+        ItemMeta cooldownMeta=cooldown.getItemMeta();
+        cooldownMeta.setLore(List.of("§7Click to set cooldown in chat","§7Examples: 30m, 12h, 7d, 0"));
+        cooldown.setItemMeta(cooldownMeta);inv.setItem(48,cooldown);
         inv.setItem(49,icon(Material.EMERALD_BLOCK,"§aSave Kit"));
         inv.setItem(53,icon(Material.BARRIER,"§cCancel"));
         player.openInventory(inv);
@@ -1155,6 +1204,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         if(!kit.rank().equals("everyone")&&!kit.rank().equals(assignedRanks.get(player.getUniqueId()))){
             player.sendMessage("§cYou need the "+kit.rank()+" rank to claim this kit.");return;
         }
+        long remaining=kitRemaining(player.getUniqueId(),name,kit);
+        if(remaining>0){player.sendMessage("§cYou can claim this kit again in "+kitDuration(remaining)+".");return;}
         PlayerInventory inventory=player.getInventory();
         ItemStack[] slots=kit.slots();
         for(int i=0;i<41;i++){
@@ -1182,6 +1233,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     player.getWorld().dropItemNaturally(player.getLocation(),overflow);
             }
         }
+        kitClaims.computeIfAbsent(player.getUniqueId(),id->new HashMap<>()).put(name,System.currentTimeMillis());
+        save();
         player.sendMessage("§aClaimed kit "+name+".");
     }
     private void openShop(Player p,int page,boolean admin){
@@ -2032,14 +2085,14 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     awaitingKitNames.add(p.getUniqueId());p.closeInventory();
                     p.sendMessage("§eType a new kit name in chat, or 'cancel'.");return;
                 }
-                if(slot>=45)return;
+                if(slot<0||slot>=45)return;
                 List<String> all=new ArrayList<>(kits.keySet());
                 int index=page*45+slot;
                 if(index>=all.size())return;
                 String name=all.get(index);
                 if(p.hasPermission("diddyblud.admin")&&e.isShiftClick()){
                     if(e.isRightClick()){
-                        kits.remove(name);save();openKits(p,page);
+                        kits.remove(name);kitClaims.values().forEach(claims->claims.remove(name));save();openKits(p,page);
                         p.sendMessage("§aDeleted kit "+name+".");return;
                     }
                     KitDefinition definition=kits.get(name);
@@ -2067,6 +2120,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     editingKitNames.remove(uuid);
                     editingKitOriginalNames.remove(uuid);
                     editingKitIcons.remove(uuid);
+                    editingKitCooldowns.remove(uuid);
+                    awaitingKitCooldown.remove(uuid);
                     newKitRanks.remove(uuid);
                     p.closeInventory();p.sendMessage("§eKit changes cancelled.");return;
                 }
@@ -2084,6 +2139,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     awaitingKitRename.add(uuid);p.closeInventory();
                     p.sendMessage("§eType the new kit name in chat (or cancel).");return;
                 }
+                if(slot==48){
+                    awaitingKitCooldown.add(uuid);p.closeInventory();
+                    p.sendMessage("§eType a cooldown in chat: 30s, 30m, 12h, 7d, or 0 for none. Type cancel to keep the old value.");return;
+                }
                 if(slot==49){
                     ItemStack[] edited=editingKits.get(uuid);
                     String name=editingKitNames.get(uuid);
@@ -2099,12 +2158,17 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     editingKitOriginalNames.remove(uuid);
                     editingKitIcons.remove(uuid);
                     newKitRanks.remove(uuid);
-                    if(previous!=null&&!previous.equals(name))kits.remove(previous);
-                    kits.put(name,new KitDefinition(rank,cloneItems(edited),picture));
+                    if(previous!=null&&!previous.equals(name)){
+                        kits.remove(previous);
+                        kitClaims.values().forEach(claims->{Long last=claims.remove(previous);if(last!=null)claims.put(name,last);});
+                    }
+                    long cooldown=editingKitCooldowns.getOrDefault(uuid,0L);
+                    editingKitCooldowns.remove(uuid);
+                    kits.put(name,new KitDefinition(rank,cloneItems(edited),picture,cooldown));
                     save();p.sendMessage("§aSaved "+name+" kit for "+rank+".");
                     openKits(p,0);return;
                 }
-                if(slot>=41)return;
+                if(slot<0||slot>=41)return;
                 ItemStack[] edited=editingKits.get(uuid);
                 if(edited==null)return;
                 if(e.isRightClick())edited[slot]=null;
@@ -3042,6 +3106,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         });
     }
     @EventHandler public void onQuit(PlayerQuitEvent e){
+        awaitingKitCooldown.remove(e.getPlayer().getUniqueId());
         if(e.getPlayer().getUniqueId().equals(queuePlayer))queuePlayer=null;
         for(var entry:new ArrayList<>(viewedInventories.entrySet())){
             if(entry.getValue().equals(e.getPlayer().getUniqueId())){
@@ -3131,6 +3196,21 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     @EventHandler(priority=EventPriority.HIGH)
     public void kitNameChat(AsyncPlayerChatEvent event){
         UUID uuid=event.getPlayer().getUniqueId();
+        if(awaitingKitCooldown.contains(uuid)){
+            event.setCancelled(true);
+            String input=event.getMessage().trim();
+            getServer().getScheduler().runTask(this,()->{
+                if(!awaitingKitCooldown.remove(uuid))return;
+                Player player=Bukkit.getPlayer(uuid);
+                if(player==null||!player.hasPermission("diddyblud.admin")||!editingKits.containsKey(uuid))return;
+                if(!input.equalsIgnoreCase("cancel")){
+                    try{editingKitCooldowns.put(uuid,parseKitCooldown(input));}
+                    catch(IllegalArgumentException invalid){player.sendMessage("§cInvalid cooldown. Use 30s, 30m, 12h, 7d or 0 (maximum 365d).");}
+                }
+                showKitEditor(player);
+            });
+            return;
+        }
         if(!awaitingKitNames.contains(uuid)&&!awaitingKitRename.contains(uuid))return;
         event.setCancelled(true);
         String name=event.getMessage().trim().toLowerCase(Locale.ROOT);
