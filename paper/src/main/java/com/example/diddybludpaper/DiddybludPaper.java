@@ -130,6 +130,9 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private DiddybludArcade arcade;
     private PlayerAuctionLog playerAuctionLog;
     private CommunityBridge communityBridge;
+    private WebsiteWallet websiteWallet;
+    private final Map<UUID,Long> webWallets=new HashMap<>();
+    private final Map<UUID,String> webWalletReceipts=new HashMap<>();
     private LevelSystem levelSystem;
     // One world-wide spawn location shared by every player and persisted in server-data.yml.
     private Location serverSpawn;
@@ -187,6 +190,8 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         levelSystem=new LevelSystem(this);
         communityBridge=new CommunityBridge(this);
         communityBridge.start();
+        websiteWallet=new WebsiteWallet(this);
+        websiteWallet.start();
         getLogger().info("Diddyblud Paper enabled with server-only Lifesteal and menus.");
     }
     // Phantoms are disabled in every world, including custom dimensions.
@@ -206,6 +211,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
         // Snapshot vaults that are still open when the server stops. Bukkit may
         // not have fired InventoryCloseEvent for them yet.
         if(communityBridge!=null)communityBridge.stop();
+        if(websiteWallet!=null)websiteWallet.stop();
         if(levelSystem!=null)levelSystem.save();
         captureOpenVaults();
         // Keep countdowns in shardSecondsRemaining for the last data write.
@@ -296,6 +302,34 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     }
     public NamespacedKey spawnerKey(){return spawnerKey;}
     public long funds(UUID id){return cash.getOrDefault(id,0L);}
+    com.google.gson.JsonObject websiteBalance(UUID owner){
+        com.google.gson.JsonObject result=new com.google.gson.JsonObject();
+        result.addProperty("money",Long.toString(funds(owner)));
+        result.addProperty("wallet",Long.toString(webWallets.getOrDefault(owner,0L)));
+        return result;
+    }
+    com.google.gson.JsonObject websiteTransfer(UUID owner,UUID operation,String kind,long amount){
+        String previous=webWalletReceipts.get(operation);
+        if(previous!=null){
+            var stored=com.google.gson.JsonParser.parseString(previous).getAsJsonObject();
+            if(!stored.get("owner").getAsString().equals(owner.toString())||!stored.get("kind").getAsString().equals(kind)||!stored.get("amount").getAsString().equals(Long.toString(amount)))throw new IllegalArgumentException("Operation mismatch");
+            return stored;
+        }
+        long oldMoney=funds(owner),oldWallet=webWallets.getOrDefault(owner,0L);
+        boolean ok=false;String error="";
+        if(amount<=0||amount>1_000_000_000_000L)error="Invalid amount";
+        else if(kind.equals("deposit")&&oldMoney>=amount&&oldWallet<=Long.MAX_VALUE-amount){cash.put(owner,oldMoney-amount);webWallets.put(owner,oldWallet+amount);ok=true;}
+        else if(kind.equals("withdraw")&&oldWallet>=amount&&oldMoney<=Long.MAX_VALUE-amount){cash.put(owner,oldMoney+amount);webWallets.put(owner,oldWallet-amount);ok=true;}
+        else error="Insufficient balance or balance limit";
+        var result=websiteBalance(owner);
+        result.addProperty("owner",owner.toString());result.addProperty("kind",kind);result.addProperty("amount",Long.toString(amount));result.addProperty("ok",ok);result.addProperty("error",error);
+        webWalletReceipts.put(operation,result.toString());
+        if(!saveState()){
+            cash.put(owner,oldMoney);webWallets.put(owner,oldWallet);webWalletReceipts.remove(operation);
+            throw new IllegalStateException("Wallet storage unavailable; retry the same request.");
+        }
+        return result;
+    }
     public boolean charge(UUID id,long amount){
         if(amount<0||funds(id)<amount)return false;
         cash.put(id,funds(id)-amount);save();return true;
@@ -371,6 +405,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
     private void load(){
         if(!dataFile.exists())return;
         YamlConfiguration y=yaml();
+        ConfigurationSection walletSection=y.getConfigurationSection("website-wallets");
+        if(walletSection!=null)for(String key:walletSection.getKeys(false))try{webWallets.put(UUID.fromString(key),Math.max(0L,walletSection.getLong(key)));}catch(IllegalArgumentException ignored){}
+        ConfigurationSection receiptSection=y.getConfigurationSection("website-wallet-receipts");
+        if(receiptSection!=null)for(String key:receiptSection.getKeys(false))try{webWalletReceipts.put(UUID.fromString(key),receiptSection.getString(key,""));}catch(IllegalArgumentException ignored){}
         heartCap=Math.max(1,Math.min(500,y.getInt("heart-cap",100)));
         ConfigurationSection groups=y.getConfigurationSection("permission-groups");
         if(groups!=null)for(String group:groups.getKeys(false))
@@ -563,8 +601,11 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
             nextOrder=Math.max(nextOrder,id+1);
         }catch(Exception ignored){}
     }
-    public void save(){
+    public void save(){saveState();}
+    private boolean saveState(){
         YamlConfiguration y=new YamlConfiguration();
+        webWallets.forEach((id,v)->y.set("website-wallets."+id,v));
+        webWalletReceipts.forEach((id,v)->y.set("website-wallet-receipts."+id,v));
         y.set("heart-cap",heartCap);
         blockedGroupCommands.forEach((group,commands)->
             y.set("permission-groups."+group,new ArrayList<>(commands)));
@@ -642,8 +683,10 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                 java.nio.file.Files.move(temporary.toPath(),dataFile.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
+            return true;
         }catch(IOException ex){
             getLogger().severe("Failed to save server-data.yml: "+ex.getMessage());
+            return false;
         }
     }
     public static long parseAmount(String input){
@@ -3725,7 +3768,7 @@ public final class DiddybludPaper extends JavaPlugin implements Listener {
                     }
                     openSell(p);return true;
                 }
-                case "gamble","arcade" ->{return arcade.command(p,args);}
+                case "gamble","arcade" ->{if(label.equalsIgnoreCase("arcade")||args.length>0&&args[0].equalsIgnoreCase("arcade"))return arcade.command(p,new String[0]);if(websiteWallet!=null)websiteWallet.link(p);else p.sendMessage("§cWebsite link unavailable.");return true;}
                 case "auctionhost" ->{return playerAuctionLog.handle(p,args);}
                 case "sellaxe" ->{
                     if(!p.hasPermission("diddyblud.admin")){p.sendMessage("§cOP only.");return true;}
